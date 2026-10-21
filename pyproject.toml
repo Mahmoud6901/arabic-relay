@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arabic-relay"
+dynamic = ["version"]
+description = "Dictate in Arabic, send a clean English prompt to your AI coding tools."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+# av<17: faster-whisper 1.2.1 passes metadata_errors to av.open, which newer PyAV removed.
+dependencies = ["faster-whisper>=1.2", "av>=11,<17", "pywebview>=5", "cryptography>=43"]
+
+[project.optional-dependencies]
+gpu = ["nvidia-cublas-cu12"]  # CTranslate2 ships its own cuDNN
+build = ["pyinstaller==6.22.3"]
+
+[project.gui-scripts]
+arabic-relay = "arabic_relay.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Mahmoud6901/arabic-relay"
+
+[tool.setuptools.dynamic]
+version = {attr = "arabic_relay.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+arabic_relay = ["index.html", "fonts/*", "assets/*"]

@@ -1,0 +1,29 @@
+# Personal data — never commit
+.local/
+vocabulary/
+catalog.json
+*.sqlite3
+*.sqlite3-*
+*.bin
+*.key
+*.pem
+.env
+cohere.*
+
+# Build output — releases ship via GitHub Releases
+*.exe
+build/
+desktop/
+dist/
+__pycache__/
+*.pyc
+
+# Local tool workspaces
+.taste-skill/
+.impeccable/
+graphify-out/
+.claude/
+.archive/
+.venv/
+*.egg-info/
+.superpowers/
