@@ -76,7 +76,7 @@ def run():
 MUTEX = None
 
 
-def single_instance(name='Local\ArabicRelay.Window'):
+def single_instance(name=r'Local\ArabicRelay.Window'):
     """True for the first window of this Windows user; the handle lives as long as the process."""
     global MUTEX
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
