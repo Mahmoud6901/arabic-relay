@@ -9,7 +9,7 @@ import threading
 import tokenize
 import unittest
 from unittest.mock import Mock, patch
-from arabic_relay import models, paths, server, translators
+from arabic_relay import __version__, models, paths, server, translators
 
 
 class Routes(unittest.TestCase):
@@ -115,7 +115,7 @@ class Routes(unittest.TestCase):
         connection.request('GET', '/api/status', headers={'Origin': server.ORIGIN})
         body = json.loads(connection.getresponse().read())
         connection.close()
-        self.assertEqual(body['version'], '0.1.0')
+        self.assertEqual(body['version'], __version__)
         self.assertIs(body['crashed'], False)
 
     def test_update_routes_are_handled(self):

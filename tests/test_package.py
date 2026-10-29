@@ -13,7 +13,7 @@ PROJECT = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
 
 class Package(unittest.TestCase):
     def test_one_version_source(self):
-        self.assertEqual(arabic_relay.__version__, '0.1.0')
+        self.assertRegex(arabic_relay.__version__, r'^\d+\.\d+\.\d+$')
         self.assertEqual(PROJECT['project']['dynamic'], ['version'])
         self.assertEqual(PROJECT['tool']['setuptools']['dynamic']['version']['attr'], 'arabic_relay.__version__')
 

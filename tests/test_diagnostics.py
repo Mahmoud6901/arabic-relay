@@ -10,7 +10,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-from arabic_relay import diagnostics, locate, models, paths, store
+from arabic_relay import __version__, diagnostics, locate, models, paths, store
 
 
 class Diagnostics(unittest.TestCase):
@@ -69,7 +69,7 @@ class Diagnostics(unittest.TestCase):
         gpu = {'name': 'RTX 5070', 'vramGb': 12.0, 'driver': '600.1'}
         with patch.object(models, 'gpu_info', return_value=gpu), patch.object(locate, 'tool_path', return_value=None):
             report = diagnostics.report()
-        for expected in ('Arabic Relay 0.1.0', 'Windows', 'RTX 5070', '600.1', 'Codex: not found', 'Claude Code: not found',
+        for expected in (f'Arabic Relay {__version__}', 'Windows', 'RTX 5070', '600.1', 'Codex: not found', 'Claude Code: not found',
                          'Wispr Flow: not found', 'Data folder: '):
             self.assertIn(expected, report)
         self.assertNotIn('SECRET-TRANSCRIPT', report)
@@ -90,7 +90,7 @@ class SelfTest(unittest.TestCase):
             done = subprocess.run([sys.executable, '-I', '-m', 'arabic_relay', '--self-test'], capture_output=True, text=True,
                                   timeout=180, env=env)
         self.assertEqual(done.returncode, 0, done.stderr[-2000:])
-        self.assertEqual(json.loads(done.stdout.strip().splitlines()[-1]), {'status': True, 'worker': True, 'version': '0.1.0'})
+        self.assertEqual(json.loads(done.stdout.strip().splitlines()[-1]), {'status': True, 'worker': True, 'version': __version__})
 
     def test_self_test_fails_when_the_worker_fails(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(paths, 'DATA', Path(folder)), \
@@ -98,7 +98,7 @@ class SelfTest(unittest.TestCase):
                 patch.object(diagnostics.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'boom')), \
                 patch('builtins.print') as shown:
             self.assertEqual(diagnostics.self_test(), 1)
-        self.assertEqual(json.loads(shown.call_args.args[0]), {'status': True, 'worker': False, 'version': '0.1.0'})
+        self.assertEqual(json.loads(shown.call_args.args[0]), {'status': True, 'worker': False, 'version': __version__})
 
 
 if __name__ == '__main__':

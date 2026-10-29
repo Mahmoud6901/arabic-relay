@@ -14,13 +14,14 @@ function Invoke-SelfTest([string]$exe) {
     New-Item -ItemType Directory $data | Out-Null
     $env:ARABIC_RELAY_DATA_DIR = $data
     try {
-        $run = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow `
+        $run = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru -WindowStyle Hidden `
             -RedirectStandardOutput "$data\selftest.txt" -RedirectStandardError "$data\selftest-error.txt"
         Get-Content "$data\selftest.txt"
         if ($run.ExitCode -ne 0) { Get-Content "$data\selftest-error.txt"; throw "Self-test failed: $exe" }
     } finally {
         Remove-Item Env:ARABIC_RELAY_DATA_DIR
-        Remove-Item $data -Recurse -Force -ErrorAction SilentlyContinue
+        if ((Split-Path ([IO.Path]::GetFullPath($data)) -Parent) -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')) { throw 'Unexpected self-test cleanup path' }
+        Remove-Item -LiteralPath $data -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

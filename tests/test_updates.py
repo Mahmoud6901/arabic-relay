@@ -36,7 +36,8 @@ class Updates(unittest.TestCase):
         self.signature = self.key.sign(SETUP)
         self.release = self.make_release('v0.2.0')
         self.requests = []
-        for patcher in (patch.object(paths, 'DATA', self.data), patch.object(updates, 'PUBLIC_KEY', public_hex(self.key)),
+        for patcher in (patch.object(paths, 'DATA', self.data), patch.object(updates, '__version__', '0.1.0'),
+                        patch.object(updates, 'PUBLIC_KEY', public_hex(self.key)),
                         patch.object(updates.urllib.request, 'urlopen', side_effect=self.urlopen),
                         patch.object(models, 'fetch', side_effect=self.fetch),
                         patch.object(updates.subprocess, 'Popen', side_effect=AssertionError('installer started'))):

@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 
-from . import locate, paths, store
+from . import __version__, locate, paths, store
 
 PREFIX = 'desktop:direct:'
 NAMES = {'codex': 'Codex', 'claude': 'Claude Code'}
@@ -54,7 +54,7 @@ class CodexReader:
         self.reader = threading.Thread(target=reader, daemon=True)
         self.reader.start()
         try:
-            self.call('initialize', {'clientInfo': {'name': 'arabic_relay', 'version': '0.1.0'},
+            self.call('initialize', {'clientInfo': {'name': 'arabic_relay', 'version': __version__},
                                      'capabilities': {'experimentalApi': True}})
             self.process.stdin.write('{"method":"initialized"}\n')
             self.process.stdin.flush()
