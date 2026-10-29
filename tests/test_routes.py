@@ -19,6 +19,8 @@ class Routes(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         for target, name, value in ((paths, 'DATA', Path(temp.name)),
                                     (server.t3, 'request_json', Mock(side_effect=ValueError('no T3 in tests'))),
+                                    (server.direct_sessions, 'connect_claude', Mock(return_value={})),
+                                    (server.direct_sessions, 'connect_codex', Mock(return_value={})),
                                     (models, 'gpu_info', Mock(return_value=None)),
                                     (translators, 'catalog', Mock(return_value={'codex': {'models': []}, 'claude': {'models': []}}))):
             patcher = patch.object(target, name, value)
@@ -49,7 +51,7 @@ class Routes(unittest.TestCase):
         self.assertIn('/api/transcribe', routes)
         unhandled = []
         with patch.object(server.t3, 'load_auth', return_value=None), \
-                patch.object(server.desktop_chats, 'catalog', return_value={'projects': [], 'apps': []}), \
+                patch.object(server.direct_sessions, 'catalog', return_value={'projects': [], 'apps': []}), \
                 patch.object(server.translate, 'codex_text', side_effect=ValueError('no network in tests')), \
                 patch.object(server.speech, 'open_wispr_flow', return_value={'installed': False}):
             for route in routes:
@@ -66,6 +68,20 @@ class Routes(unittest.TestCase):
         self.assertEqual(response.status, 200, body)
         self.assertEqual(set(body['promptChoice']), {'tool', 'model', 'effort'})
         self.assertIn(' · ', body['promptLabel'])
+
+    def test_direct_setup_routes_require_same_origin_and_token(self):
+        for provider in ('claude', 'codex'):
+            route = '/api/direct/' + provider + '/connect'
+            self.assertEqual(self.status('POST', route), 200)
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+            connection.request('POST', route, body=b'{}', headers={'Origin': 'https://example.com'})
+            self.assertEqual(connection.getresponse().status, 403)
+            connection.close()
+
+    def test_browser_companion_routes_are_removed(self):
+        for route in ('/api/browser/pair', '/api/browser/disconnect', '/bridge/pair', '/bridge/sync', '/bridge/result'):
+            self.assertEqual(self.status('POST', route), 404)
+        self.assertEqual(self.status('GET', '/api/browser/catalog'), 404)
 
     def test_translator_routes_are_handled(self):
         for method, route in (('GET', '/api/translators'), ('POST', '/api/prompt-choice'), ('POST', '/api/tool-path')):

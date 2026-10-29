@@ -7,6 +7,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class Installer(unittest.TestCase):
+    def test_frozen_build_only_includes_public_application_assets(self):
+        # Ignored legacy data next to source must not become part of a distributable build.
+        spec = (ROOT / 'installer' / 'ArabicRelay.spec').read_text(encoding='utf-8')
+        self.assertIn("includes=['index.html', 'fonts/*', 'assets/*', 'relay-claude-hook.ps1']", spec)
+        self.assertNotIn("collect_data_files('arabic_relay')", spec)
+
     def test_uninstall_deletes_only_what_it_installed(self):
         # A user can install into an existing folder; uninstalling must not empty it.
         script = (ROOT / 'installer' / 'ArabicRelay.iss').read_text(encoding='utf-8')

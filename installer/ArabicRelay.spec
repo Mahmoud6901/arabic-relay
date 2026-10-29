@@ -8,7 +8,8 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 a = Analysis(
     [os.path.join(SPECPATH, 'launch.py')],
     pathex=[os.path.join(ROOT, 'src')],
-    datas=collect_data_files('arabic_relay') + collect_data_files('faster_whisper'),
+    datas=collect_data_files('arabic_relay', includes=['index.html', 'fonts/*', 'assets/*', 'relay-claude-hook.ps1'])
+          + collect_data_files('faster_whisper'),
     binaries=collect_dynamic_libs('ctranslate2'),
 )
 pyz = PYZ(a.pure)

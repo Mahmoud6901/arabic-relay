@@ -38,6 +38,22 @@ function boot({status={},replies={}}={}){
  assert.equal(n.get('crashBanner').hidden,true);
  assert.equal(n.get('appVersion').textContent,'Arabic Relay 0.1.0');
 
+ // Direct setup refreshes selectable coding sessions without altering or sending the draft.
+ const codingProject={id:'desktop:direct:claude',title:'Claude Code',desktop:true,connectionStatus:'Connected',
+  threads:[{id:'desktop:direct:claude:session',title:'Existing coding task',disabled:false,status:'ready',runtimeMode:'Local'}]};
+ app=boot({replies:{'/api/direct/claude/connect':{message:'Reopen existing sessions to connect.'},
+  '/api/direct/catalog':{projects:[codingProject],apps:[{name:'Claude Code',ready:true,message:'Connected'}]}}});
+ await flush();
+ n=app.nodes;
+ n.get('arabic').value='Keep my source';n.get('english').value='Keep my draft';
+ await n.get('connectClaude').click();await flush();
+ assert.equal(app.posted('/api/direct/claude/connect').length,1);
+ assert.ok(n.get('projectList').innerHTML.includes('Existing coding task'));
+ assert.equal(n.get('arabic').value,'Keep my source');assert.equal(n.get('english').value,'Keep my draft');
+ assert.equal(n.get('notice').textContent,'Reopen existing sessions to connect.');
+ assert.equal(app.posted('/api/send').length,0);
+ assert.equal(n.has('pairBrowser'),false);
+
  // After a crash: the notice, Copy diagnostics, Dismiss.
  app=boot({status:{crashed:true},replies:{'/api/diagnostics':{text:'Arabic Relay 0.1.0\nGPU: none found'},'/api/crash/dismiss':{crashed:false}}});
  await flush();

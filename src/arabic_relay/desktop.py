@@ -18,19 +18,6 @@ from . import diagnostics, server, locate, paths, store, t3, updates
 
 
 class DesktopApi:
-    def open_browser_companion(self, token):
-        if token != server.CSRF:
-            raise ValueError('Invalid request.')
-        # A stable folder keeps unpacked extension identity across desktop app updates.
-        import shutil
-        destination = paths.DATA / 'Browser Companion'
-        destination.mkdir(exist_ok=True)
-        for source in (paths.ROOT / 'browser_companion').iterdir():
-            if source.is_file():
-                shutil.copy2(source, destination / source.name)
-        os.startfile(str(destination))
-        return str(destination)
-
     def open_sign_in(self, url, token):
         if token != server.CSRF or not isinstance(url, str) or len(url) > 5000:
             raise ValueError('Invalid sign-in request.')

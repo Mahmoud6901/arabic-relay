@@ -12,6 +12,9 @@ from arabic_relay import server, paths, store, t3
 class DataFolder(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        catalog = patch.object(server.direct_sessions, 'catalog', return_value={'projects': [], 'apps': []})
+        catalog.start()
+        self.addCleanup(catalog.stop)
 
     def tearDown(self):
         importlib.reload(paths)

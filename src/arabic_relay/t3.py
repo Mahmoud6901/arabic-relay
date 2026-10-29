@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import browser_chats, desktop_chats, history, paths, store
+from . import direct_sessions, history, paths, store
 
 
 T3 = 'http://127.0.0.1:3773'
@@ -186,15 +186,9 @@ def prepare_send(body, request_id=None):
     mode = tool('orchestrator_capabilities', {})['runtimeMode'] if t3_targets else None
     levels = {'approval-required': 0, 'auto-accept-edits': 1, 'auto': 2, 'full-access': 3}
     for target in payload['targets']:
-        if target['projectId'].startswith(browser_chats.PREFIX):
-            item = browser_chats.validate(target)
-            target['title'] = browser_chats.NAMES[item['provider']] + ' / ' + item['title']
-            continue
         if target['projectId'].startswith('desktop:'):
-            if os.environ.get('ARABIC_RELAY_NATIVE') != '1':
-                raise ValueError('Desktop chat sending requires the native Arabic Relay application.')
-            item = desktop_chats.validate(target)
-            target['title'] = desktop_chats.NAMES[item['provider']] + ' / ' + item['title']
+            item = direct_sessions.validate(target)
+            target['title'] = direct_sessions.NAMES[item['provider']] + ' / ' + item['title']
             continue
         thread = tool('t3_thread_read', {'threadId': target['threadId'], 'limit': 1, 'maxCharsPerItem': 1})['thread']
         if thread['projectId'] != target['projectId'] or thread['archived'] or thread['parentThreadId'] is not None:
@@ -250,18 +244,10 @@ def send(approval_id, sender=None):
             db.execute('INSERT INTO deliveries VALUES (?, ?, ?, ?)', (approval_id, target['threadId'], 'unknown', None))
             db.commit()  # Record before transport. Never silently replay an uncertain write.
             try:
-                if target['projectId'].startswith(browser_chats.PREFIX):
-                    receipt = browser_chats.send(target, payload['english'])
-                    if receipt.get('delivery') != 'browser_submit':
-                        raise ValueError('Browser submission was not confirmed. Check the conversation before sending again.')
-                    state = 'submitted'
-                elif target['projectId'].startswith('desktop:'):
-                    if os.environ.get('ARABIC_RELAY_NATIVE') != '1':
-                        raise ValueError('Desktop chat sending requires the native Arabic Relay application.')
-                    desktop_chats.prepare(target)
-                    receipt = desktop_chats.send(target, payload['english'])
-                    if receipt.get('delivery') != 'desktop_submit':
-                        raise ValueError('Desktop submission was not confirmed. Check the app before sending again.')
+                if target['projectId'].startswith('desktop:'):
+                    receipt = direct_sessions.send(target, payload['english'])
+                    if receipt.get('delivery') != 'direct_submit':
+                        raise ValueError('Direct submission was not confirmed. Check the session before sending again.')
                     state = 'submitted'
                 else:
                     receipt = sender('t3_thread_send', {'threadId': target['threadId'], 'message': payload['english'],

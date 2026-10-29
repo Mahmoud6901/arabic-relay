@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, browser_chats, desktop_chats, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
+from . import __version__, direct_sessions, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
 
 ROOT = paths.ROOT
 PORT = int(os.environ.get('ARABIC_RELAY_PORT', '8788'))
@@ -23,7 +23,7 @@ CSRF = secrets.token_urlsafe(32)
 
 
 def catalog_response():
-    desktop = browser_chats.catalog()
+    desktop = direct_sessions.catalog()
     snapshot = paths.DATA / 'catalog.json'
     t3_error = None
     if t3.load_auth():
@@ -52,46 +52,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('X-Frame-Options', 'DENY')
-        origin = self.headers.get('Origin', '')
-        if self.path.startswith('/bridge/') and browser_chats.extension_origin(origin):
-            self.send_header('Access-Control-Allow-Origin', origin)
-            self.send_header('Vary', 'Origin')
-            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-            self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-            self.send_header('Access-Control-Allow-Private-Network', 'true')
         self.end_headers()
         self.wfile.write(raw)
 
     def valid_host(self):
         return self.headers.get('Host') == urllib.parse.urlparse(ORIGIN).netloc
-
-    def do_OPTIONS(self):
-        if not self.valid_host() or not self.path.startswith('/bridge/') or not browser_chats.extension_origin(self.headers.get('Origin')):
-            return self.respond({'error': 'Invalid browser origin'}, 403)
-        return self.respond({})
-
-    def browser_post(self):
-        origin = self.headers.get('Origin', '')
-        if not self.valid_host() or not browser_chats.extension_origin(origin):
-            return self.respond({'error': 'Invalid browser origin'}, 403)
-        if self.path != '/bridge/pair' and not browser_chats.authorize(origin, self.headers.get('Authorization', '').removeprefix('Bearer ')):
-            return self.respond({'error': 'Pair the browser companion in Relay Settings.'}, 403)
-        try:
-            size = int(self.headers.get('Content-Length', 0))
-            if not 0 < size <= 2000000:
-                raise ValueError('Invalid browser request size.')
-            body = json.loads(self.rfile.read(size))
-            if not isinstance(body, dict):
-                raise ValueError('Invalid browser request.')
-            if self.path == '/bridge/pair':
-                return self.respond(browser_chats.pair(origin, body.get('code')))
-            if self.path == '/bridge/sync':
-                return self.respond(browser_chats.sync(body))
-            if self.path == '/bridge/result':
-                return self.respond(browser_chats.complete(body))
-            return self.respond({'error': 'Not found'}, 404)
-        except Exception as error:
-            self.fail(error)
 
     def do_GET(self):
         if not self.valid_host():
@@ -130,8 +95,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(store.personal_vocabulary())
             if path.path == '/api/catalog':
                 return self.respond(catalog_response())
-            if path.path == '/api/browser/catalog':
-                return self.respond(browser_chats.catalog())
+            if path.path == '/api/direct/catalog':
+                return self.respond(direct_sessions.catalog())
             if path.path == '/oauth/callback':
                 query = urllib.parse.parse_qs(path.query)
                 state = query.get('state', [''])[0]
@@ -166,8 +131,6 @@ class Handler(BaseHTTPRequestHandler):
         self.respond({'error': str(error)}, 400)
 
     def do_POST(self):
-        if self.path.startswith('/bridge/'):
-            return self.browser_post()
         if not self.valid_host() or self.headers.get('Origin') != ORIGIN or self.headers.get('X-Relay-Token') != CSRF:
             return self.respond({'error': 'Request must originate from this Relay page.'}, 403)
         try:
@@ -183,10 +146,10 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise ValueError('Invalid request.')
-            if self.path == '/api/browser/pair':
-                return self.respond(browser_chats.start_pairing())
-            if self.path == '/api/browser/disconnect':
-                return self.respond(browser_chats.disconnect())
+            if self.path == '/api/direct/claude/connect':
+                return self.respond(direct_sessions.connect_claude())
+            if self.path == '/api/direct/codex/connect':
+                return self.respond(direct_sessions.connect_codex())
             if self.path == '/api/wispr/open':
                 return self.respond(speech.open_wispr_flow())
             if self.path == '/api/whisper-model':

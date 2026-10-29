@@ -3,6 +3,14 @@
 All notable changes to Arabic Relay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- Select existing local Codex and Claude Code sessions directly. Codex receives prompts through its exact-session
+  queue; live Claude Code sessions register an encrypted local inbox through Relay's connection hook.
+- Remove the browser companion, pairing endpoints, and the obsolete desktop chat automation adapter.
+- Keep uncertain submissions from being retried automatically; confirmed direct sends appear in local history.
+- Make small interface text more readable.
+
 ## [0.1.0] - 2026-10-21
 
 First public release.

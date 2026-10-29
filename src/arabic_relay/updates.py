@@ -12,7 +12,7 @@ import urllib.request
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from . import __version__, desktop_chats, firstrun, locate, models, paths, speech, store, t3, translate
+from . import __version__, direct_sessions, firstrun, locate, models, paths, speech, store, t3, translate
 
 REPO = 'Mahmoud6901/arabic-relay'
 PUBLIC_KEY = 'db597f49194c827e9ef9ec3df3e38d43000e088b576e72b7be8f3b1e43498436'  # Ed25519, raw 32 bytes as hex; the private key never leaves the owner's computer
@@ -153,7 +153,7 @@ def due():
 
 
 def busy():
-    for lock in (speech.TRANSCRIBE_LOCK, translate.TRANSLATE_LOCK, t3.SEND_LOCK, desktop_chats.LOCK):
+    for lock in (speech.TRANSCRIBE_LOCK, translate.TRANSLATE_LOCK, t3.SEND_LOCK, direct_sessions.LOCK):
         if not lock.acquire(blocking=False):
             return True
         lock.release()

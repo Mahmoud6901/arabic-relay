@@ -3,7 +3,7 @@
 Dictate in Arabic, mixed with the English terms you already use, and get a clean English prompt for your AI coding
 tools. Arabic Relay transcribes your voice on your own computer with Whisper, turns the transcript into an English
 prompt with Codex CLI or Claude Code (your own sign-in), and sends it only when you click Send: to T3 Code sessions, a
-ChatGPT or Claude browser conversations, or your clipboard.
+existing Codex or Claude Code sessions, or your clipboard.
 
 ![Arabic Relay: an Arabic and English transcript next to the English prompt prepared from it](docs/screenshot.png)
 
@@ -41,28 +41,30 @@ Your voice is transcribed on your computer. The transcript goes to OpenAI or Ant
 English prompt, through your own Codex or Claude Code sign-in. There is no telemetry. Read [PRIVACY.md](PRIVACY.md)
 for every connection the app makes and what Copy diagnostics contains.
 
-## ChatGPT and Claude conversations
+## Direct Codex and Claude Code sessions
 
-The optional Chrome companion automatically lists conversation titles and exact links from your signed-in pages.
-You can select several conversations alongside T3 sessions. Sending opens each selected conversation in a new tab,
-checks that its message box is empty, inserts the English prompt, verifies the destination again, and clicks Send
-once. A browser submission is not a provider delivery receipt; check the conversation for its response. Uncertain
-submissions are never retried automatically.
+Relay lists existing local coding sessions automatically, alongside T3 recipients. No browser extension is used.
+Regular ChatGPT Chat/Work and Claude chats are not included.
 
-1. In desktop Relay, open **Settings → Browser conversations → Open companion folder**.
-2. In Chrome, open **Extensions → Manage extensions**, enable **Developer mode**, choose **Load unpacked**, and
-   select the folder Relay opened. This companion is bundled source, not a Chrome Web Store extension.
-3. Click **Get pairing code** in Relay. Open the companion from Chrome's Extensions menu and paste the code.
-4. Click **Open ChatGPT & Claude** in the companion. Sign in yourself if needed. Existing tabs opened before
-   installing the companion need to be reloaded once.
+- **Codex:** install/sign in to Codex CLI, then use **Settings → Direct coding sessions → Connect Codex**.
+  Relay reads existing session IDs through the local app-server protocol and sends with `codex queue --thread`.
+  It does not start an independent `codex exec --resume` agent. The session's own model and permissions apply.
+  Open the selected session in Codex to process queued prompts; queue acceptance does not mean a turn has started.
+  The catalog includes local CLI, IDE, and desktop coding history, excluding child agents and ephemeral sessions.
+- **Claude Code:** click **Connect Claude Code**. Relay adds its own command hooks to your Claude user settings,
+  preserving existing hooks and writing a backup. Reopen the desired existing sessions, or submit your next prompt
+  there, then refresh Relay. Claude exports each live session's local inbox to the hook. Sessions without a live
+  registration stay visible but cannot be selected for sending. WSL, SSH, and cloud sessions are not supported.
 
-Relay refreshes the list automatically while those pages are open. Discovery covers conversations currently
-loaded in navigation or search results, plus the open conversation. It is not a full account export: load older
-chats by scrolling or searching in the site. Browser-visible Claude Code sessions are included; offline sessions
-are disabled. Local-only Codex and Claude Code desktop sessions are **not** exposed by this connection.
+The picker refreshes automatically. Codex confirms queue acceptance; Claude confirms the prompt's unique ID in
+its local transcript. A busy or permission-held Claude session may not confirm within 20 seconds; Relay reports
+an unknown outcome and never retries automatically. Check the target before sending again. Confirmation is not
+confirmation that the agent completed your requested task. No real prompt is sent during connection setup.
 
-Pairing lasts until **Disconnect browser** in Relay Settings or a replacement pairing. Only one browser profile
-is paired at a time. The native desktop service uses `127.0.0.1:8791`; the development preview on port 8788 is separate.
+Claude hook files and encrypted per-session connection details live in Relay's data folder. The hook is named
+`relay-claude-hook.ps1`; removing its entries from Claude's user `settings.json` disconnects future sessions.
+The browser companion and its pairing endpoints have been removed. If you manually installed the old Chrome
+extension, remove **Arabic Relay Browser Companion** from Chrome; it can no longer connect to this app.
 
 ## Your data
 

@@ -32,7 +32,6 @@ jobs:
           node tests/test_setup.cjs
           node tests/test_translation_ui.cjs
           node tests/test_ship_ui.cjs
-          node tests/test_browser_companion.cjs
 
   secrets:
     runs-on: ubuntu-latest

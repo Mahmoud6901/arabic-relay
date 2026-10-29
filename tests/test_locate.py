@@ -19,6 +19,9 @@ class ModelFolder(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        data = patch.object(locate.paths, 'DATA', self.root / 'data')
+        data.start()
+        self.addCleanup(data.stop)
 
     def test_valid_folder(self):
         self.assertEqual(locate.validate_model_folder(make_model(self.root / 'm')), self.root / 'm')

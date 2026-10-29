@@ -11,23 +11,20 @@ Arabic Relay runs on your computer. This page lists every connection it makes an
 | Hugging Face and PyPI | Once, during setup or when you click Re-download | Nothing personal: the app downloads the Whisper model (Hugging Face) and, with an NVIDIA GPU, NVIDIA's cuBLAS library (PyPI) | huggingface.co, files.pythonhosted.org |
 | GitHub Releases | Once a day, unless updates are Off | Nothing personal: the app asks for the latest release and downloads it | github.com |
 
-Sending is always your click. When you send to a ChatGPT or Claude browser conversation, the prompt goes to the
-selected conversation on that website under the browser's signed-in account. T3 Code delivery stays on your computer (`127.0.0.1`).
+Sending is always your click. T3 delivery stays on your computer (`127.0.0.1`). Direct Codex delivery uses the
+installed CLI's exact-session queue. Direct Claude Code delivery uses that session's Windows named pipe. The
+receiving coding tool processes the prompt through its own signed-in provider and permissions.
 
-The optional browser companion has access only to `chatgpt.com`, `claude.ai`, and the local Relay service. It reads
-conversation titles and links from rendered navigation and the current page; it does not read cookies, access
-tokens, browser history, or conversation message history. It reads the selected message box to avoid replacing
-an unsent draft and to verify the exact text before clicking Send. Conversation discovery stays in Relay's memory
-and expires when the browser stops reporting. No full conversation export is performed.
+Session discovery reads Codex metadata and Claude Desktop Code metadata. Relay shows titles, working folders,
+and availability; it does not export whole conversations. Claude's connection hook records a session ID, working
+folder, transcript path, local pipe address, and scoped inbox token. Records are encrypted with Windows DPAPI
+for your Windows account. Tokens are never returned to the UI or written to Git. The hook removes its record on
+session exit; stale or unreachable pipes cannot be selected. To confirm a send, Relay reads at most the latest
+2 MB of the selected Claude transcript looking for its unique message ID. It does not save that transcript.
 
-The companion is paired using a one-time code that expires after ten minutes. Relay encrypts its pairing token
-with Windows DPAPI in `browser.bin`; the extension stores its copy in private extension storage. Website content
-scripts cannot read this token. Disconnecting in Settings revokes it. Re-pairing replaces the previous browser
-connection. A submission already handed to the browser may still finish while disconnecting; check it before retrying.
-
-Cohere uploads begin only after you stop recording. Recordings longer than two minutes may be split at quiet pauses
-and transcribed with at most two requests at once. All audio samples are preserved in order. A failed section fails
-the whole transcription; requests are not automatically retried, and the recording remains available in the app.
+Connecting Claude preserves existing user settings and writes a backup before adding Relay's hooks. No browser
+companion, browser cookies, website credentials, or regular ChatGPT/Claude chat history are used. The removed
+browser pairing and command endpoints no longer accept requests.
 
 ## What stays on your computer
 
