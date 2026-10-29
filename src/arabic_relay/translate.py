@@ -82,6 +82,8 @@ def build_command(executable, choice, instructions):
                  '--strict-mcp-config', '--setting-sources', '', '--disable-slash-commands', '--system-prompt', instructions])
     return ([str(executable), 'exec', '--ignore-user-config', '--ignore-rules', '--ephemeral',
              '--skip-git-repo-check', '--sandbox', 'read-only', '--json',
+             # Text preparation does not need connector handshakes or remote plugin synchronization.
+             '-c', 'features.apps=false', '-c', 'features.plugins=false', '-c', 'features.remote_plugin=false',
              '-c', 'features.shell_tool=false', '-c', 'features.code_mode=false',
              '-c', 'features.apply_patch=false', '-c', 'web_search="disabled"',
              '-c', f'model_reasoning_effort="{effort}"'] + (['-m', model] if model else []) + ['-'])

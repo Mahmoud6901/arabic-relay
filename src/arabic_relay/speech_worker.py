@@ -24,15 +24,24 @@ def watch_parent(pid):
 
 def run_model(samples, folder, device, keywords, check=False):
     """Transcribe on the requested device; if CUDA fails for any reason, retry once on the CPU."""
-    from faster_whisper import WhisperModel
+    from faster_whisper import BatchedInferencePipeline, WhisperModel
     hints = ', '.join(keywords) or None
 
     def run(device):
         model = WhisperModel(folder, device=device, compute_type='float16' if device == 'cuda' else 'int8',
                              local_files_only=True)
-        segments, _ = model.transcribe(samples, task='transcribe', language=None, multilingual=True, beam_size=5,
-                                       vad_filter=not check, condition_on_previous_text=False,
-                                       initial_prompt=hints, hotwords=hints)
+        options = dict(task='transcribe', language=None, multilingual=True, beam_size=5,
+                       vad_filter=not check, condition_on_previous_text=False,
+                       initial_prompt=hints, hotwords=hints)
+        if device == 'cuda' and not check and len(samples) >= 45 * 16000:
+            try:
+                segments, _ = BatchedInferencePipeline(model=model).transcribe(samples, batch_size=2, **options)
+                return ''.join(segment.text for segment in segments).strip()
+            except RuntimeError as error:
+                if 'out of memory' not in str(error).lower():
+                    raise
+                # Retry serially on this GPU before considering the much slower CPU fallback.
+        segments, _ = model.transcribe(samples, **options)
         return ''.join(segment.text for segment in segments).strip()
 
     if device == 'cuda':

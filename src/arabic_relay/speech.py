@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import wave
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 
 from . import locate, models, paths, store
 
@@ -128,51 +129,108 @@ class NoCohereRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def transcribe_cohere(audio, kind):
-    if kind != 'audio/wav':
-        raise ValueError('Cohere needs WAV audio. Record again using the Cohere option.')
+def cohere_clips(audio):
+    """Split recordings over two minutes at quiet pauses; preserve every PCM sample in order."""
     try:
         with wave.open(io.BytesIO(audio), 'rb') as clip:
             frames = clip.getnframes()
+            pcm = clip.readframes(frames)
             if (clip.getnchannels() != 1 or clip.getsampwidth() != 2 or clip.getframerate() != 16000
-                    or not 0 < frames <= 300 * 16000 or len(clip.readframes(frames)) != frames * 2):
+                    or not 0 < frames <= 300 * 16000 or len(pcm) != frames * 2):
                 raise ValueError()
     except (ValueError, EOFError, wave.Error):
         raise ValueError('Use a valid mono WAV recording under five minutes.') from None
+    if frames <= 120 * 16000:
+        return [audio]
+    import numpy as np
+    samples = np.frombuffer(pcm, dtype='<i2').astype(np.float32)
+    windows = samples[:frames // 320 * 320].reshape(-1, 320)
+    quiet = np.sqrt(np.mean(windows * windows, axis=1)) < 100
+    pauses, start = [], None
+    for index, silent in enumerate(quiet):
+        if silent and start is None:
+            start = index
+        if not silent and start is not None:
+            if index - start >= 15:  # At least 300 ms quiet; never cut continuous speech to meet a timer.
+                pauses.append((start + index) // 2 * 320)
+            start = None
+    cuts = [0]
+    while frames - cuts[-1] > 80 * 16000:
+        candidates = [point for point in pauses if cuts[-1] + 40 * 16000 <= point <= cuts[-1] + 80 * 16000
+                      and frames - point >= 15 * 16000]
+        if not candidates:
+            break
+        cuts.append(min(candidates, key=lambda point: abs(point - cuts[-1] - 60 * 16000)))
+    if len(cuts) == 1:
+        return [audio]
+    cuts.append(frames)
+    clips = []
+    for first, last in zip(cuts, cuts[1:]):
+        output = io.BytesIO()
+        with wave.open(output, 'wb') as clip:
+            clip.setnchannels(1)
+            clip.setsampwidth(2)
+            clip.setframerate(16000)
+            clip.writeframes(pcm[first * 2:last * 2])
+        clips.append(output.getvalue())
+    return clips
+
+
+def transcribe_cohere(audio, kind):
+    if kind != 'audio/wav':
+        raise ValueError('Cohere needs WAV audio. Record again using the Cohere option.')
+    clips = cohere_clips(audio)
     key = load_cohere_key()
     if not key:
         raise ValueError('Add your Cohere API key in Speech details before recording.')
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
         raise ValueError('A recording is already being transcribed. Wait for it to finish.')
     try:
-        boundary = 'relay-' + secrets.token_hex(24)
-        fields = [('model', COHERE_MODEL), ('language', 'ar')]
-        body = b''.join((f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n').encode()
-                        for name, value in fields)
-        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="dictation.wav"\r\n'
-                 'Content-Type: audio/wav\r\n\r\n').encode() + audio + f'\r\n--{boundary}--\r\n'.encode()
-        request = urllib.request.Request('https://api.cohere.com/v2/audio/transcriptions', data=body,
-                    headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'multipart/form-data; boundary=' + boundary,
-                             'Accept': 'application/json'}, method='POST')
-        try:
-            with urllib.request.build_opener(NoCohereRedirect()).open(request, timeout=120) as response:
-                raw = response.read(128001)
-            if len(raw) > 128000:
-                raise ValueError()
-            result = json.loads(raw)
-            if not isinstance(result, dict):
-                raise ValueError()
-        except urllib.error.HTTPError as error:
-            messages = {401: 'Cohere rejected the API key. Replace it in Speech details.',
-                        403: 'This Cohere key does not have access to Arabic transcription.',
-                        498: 'Cohere rejected the API key. Replace it in Speech details.',
-                        429: 'Cohere reached an account or rate limit. Retry manually later.'}
-            raise ValueError(messages.get(error.code, 'Cohere could not transcribe this recording. Retry manually later.')) from None
-        except (OSError, ValueError):
-            raise ValueError('Cohere could not complete transcription. Check your connection and retry manually.') from None
-        return transcript_result(result.get('text'), COHERE_MODEL)
+        if len(clips) == 1:
+            text = cohere_request(clips[0], key)
+        else:
+            pool = ThreadPoolExecutor(max_workers=2)
+            try:
+                # map retains audio order even when the second request finishes first.
+                text = ' '.join(pool.map(lambda clip: cohere_request(clip, key), clips)).strip()
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
+        return transcript_result(text, COHERE_MODEL)
     finally:
         TRANSCRIBE_LOCK.release()
+
+
+def cohere_request(audio, key):
+    """One request, never retried. An empty section is allowed; the combined transcript must contain speech."""
+    boundary = 'relay-' + secrets.token_hex(24)
+    fields = [('model', COHERE_MODEL), ('language', 'ar')]
+    body = b''.join((f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n').encode()
+                    for name, value in fields)
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="dictation.wav"\r\n'
+             'Content-Type: audio/wav\r\n\r\n').encode() + audio + f'\r\n--{boundary}--\r\n'.encode()
+    request = urllib.request.Request('https://api.cohere.com/v2/audio/transcriptions', data=body,
+                headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'multipart/form-data; boundary=' + boundary,
+                         'Accept': 'application/json'}, method='POST')
+    try:
+        with urllib.request.build_opener(NoCohereRedirect()).open(request, timeout=120) as response:
+            raw = response.read(128001)
+        if len(raw) > 128000:
+            raise ValueError()
+        result = json.loads(raw)
+        if not isinstance(result, dict):
+            raise ValueError()
+    except urllib.error.HTTPError as error:
+        messages = {401: 'Cohere rejected the API key. Replace it in Speech details.',
+                    403: 'This Cohere key does not have access to Arabic transcription.',
+                    498: 'Cohere rejected the API key. Replace it in Speech details.',
+                    429: 'Cohere reached an account or rate limit. Retry manually later.'}
+        raise ValueError(messages.get(error.code, 'Cohere could not transcribe this recording. Retry manually later.')) from None
+    except (OSError, ValueError):
+        raise ValueError('Cohere could not complete transcription. Check your connection and retry manually.') from None
+    text = result.get('text')
+    if not isinstance(text, str) or len(text) > 12000:
+        raise ValueError('Cohere returned an invalid transcript. Retry manually.')
+    return text.strip()
 
 
 def transcribe(audio, content_type, vocabulary='', provider='whisper'):

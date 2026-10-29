@@ -141,6 +141,13 @@ class TranslationBoundary(unittest.TestCase):
         self.assertEqual(command[command.index('--system-prompt') + 1], 'sys')
         self.assertNotIn('--model', translate.build_command('claude.exe', {'tool': 'claude', 'model': '', 'effort': 'low'}, 'sys'))
 
+    def test_text_only_codex_does_not_start_connectors_or_plugins(self):
+        command = translate.build_command('codex.exe', {'tool': 'codex', 'model': 'gpt-5.6-luna', 'effort': 'medium'}, 'translate')
+        for feature in ('apps', 'plugins', 'remote_plugin'):
+            self.assertIn(f'features.{feature}=false', command)
+        self.assertIn('model_reasoning_effort="medium"', command)
+        self.assertIn('gpt-5.6-luna', command)
+
     def test_failure_kind(self):
         self.assertEqual(translate.failure_kind("The 'gpt-nonexistent-9' model is not supported when using Codex with a ChatGPT account."), 'model')
         self.assertEqual(translate.failure_kind("There's an issue with the selected model (claude-nonexistent-9). It may not exist or you may not have access to it."), 'model')

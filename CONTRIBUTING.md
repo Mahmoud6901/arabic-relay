@@ -24,6 +24,7 @@ other than 8791.
 ```powershell
 .venv\Scripts\python -m unittest discover -s tests
 node tests\test_voice.cjs
+node tests\test_history_ui.cjs
 node tests\test_setup.cjs
 node tests\test_translation_ui.cjs
 node tests\test_ship_ui.cjs

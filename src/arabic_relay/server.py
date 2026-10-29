@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, desktop_chats, diagnostics, firstrun, locate, paths, speech, store, t3, translate, translators, updates
+from . import __version__, desktop_chats, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
 
 ROOT = paths.ROOT
 PORT = int(os.environ.get('ARABIC_RELAY_PORT', '8788'))
@@ -82,6 +82,8 @@ class Handler(BaseHTTPRequestHandler):
                                      'promptChoice': (choice := translate.prompt_choice()),
                                      'promptLabel': translators.label(choice), 'missingTools': locate.missing_tools(),
                                      'translator': bool(locate.tool_path('codex') or locate.tool_path('claude'))})
+            if path.path == '/api/history':
+                return self.respond(history.entries())
             if path.path == '/api/translators':
                 choice = translate.prompt_choice()  # copy: the catalog dict is the shared cache
                 return self.respond({**translators.catalog(refresh=True), 'choice': choice, 'label': translators.label(choice)})
@@ -196,6 +198,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(store.set_auto_spelling(body.get('enabled')))
             if self.path == '/api/send':
                 return self.respond(t3.send_prompt(body))
+            if self.path == '/api/history/delete':
+                return self.respond(history.delete(body.get('id')))
+            if self.path == '/api/history/clear':
+                return self.respond(history.clear())
             return self.respond({'error': 'Not found'}, 404)
         except Exception as error:
             self.fail(error)

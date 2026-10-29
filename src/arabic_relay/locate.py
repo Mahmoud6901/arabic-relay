@@ -60,6 +60,9 @@ def translator_path():
     npm = Path(os.environ.get('APPDATA', '')) / 'npm/node_modules/@openai/codex/node_modules'
     candidates = [npm / '@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe',
                   Path.home() / '.local/bin/codex.exe', winget_links() / 'codex.exe']
+    # Codex desktop updates replace this versioned directory; discover it instead of pinning a version.
+    desktop = Path(os.environ.get('LOCALAPPDATA', '')) / 'OpenAI/Codex/bin'
+    candidates += sorted(desktop.glob('*/codex.exe'), key=lambda p: p.stat().st_mtime, reverse=True)
     return installed or next((str(p) for p in candidates if p.is_file()), None)
 
 

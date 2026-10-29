@@ -46,6 +46,18 @@ for every connection the app makes and what Copy diagnostics contains.
 Settings, learned vocabulary and the speech model live in `%LOCALAPPDATA%\Arabic Relay`. Uninstalling asks whether to
 delete them; the default keeps them.
 
+**History** in the top bar keeps the latest 20 sent English prompts on this computer, with send time and destination
+names. It imports previous accepted sends where available. Read, copy, or use a prompt again without sending it.
+Using it again clears recipients and asks before replacing an existing draft. Delete and Clear history both ask
+for confirmation. Unsent drafts, failed sends, and audio are not added to history.
+
+While recording, **Stop & transcribe** keeps your words. **Cancel recording** discards that recording and keeps any
+text already in the editor.
+
+Longer recordings use GPU batching with local Whisper. Cohere recordings over two minutes can be processed in
+sections at quiet pauses, with at most two requests at once. Short Cohere recordings stay as one request. Processing
+still begins after you stop recording; the selected speech model and Arabic/English support stay the same.
+
 ## Install with pip (developers)
 
 ```powershell

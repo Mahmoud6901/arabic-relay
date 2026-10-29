@@ -1,5 +1,6 @@
 """T3 Code client (OAuth + MCP) and the one-click send pipeline to T3 sessions and desktop chats."""
 import json
+import sqlite3
 import os
 import re
 import secrets
@@ -9,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import desktop_chats, paths, store
+from . import desktop_chats, history, paths, store
 
 
 T3 = 'http://127.0.0.1:3773'
@@ -225,11 +226,16 @@ def send(approval_id, sender=None):
     if not isinstance(approval_id, str):
         raise ValueError('Invalid send request.')
     with SEND_LOCK, store.database() as db:
+        db.execute('BEGIN IMMEDIATE')
+        history.initialize(db)
+        db.commit()
         row = db.execute('SELECT * FROM approvals WHERE id=?', (approval_id,)).fetchone()
         if not row or time.time() - row['created'] > 1800:
             raise ValueError('This send request expired. Edit the draft to start a new send.')
         payload = json.loads(row['payload'])
         results = []
+        recorded = False
+        history_error = None
         for target in payload['targets']:
             old = db.execute('SELECT state,receipt FROM deliveries WHERE approval=? AND thread=?',
                              (approval_id, target['threadId'])).fetchone()
@@ -260,5 +266,14 @@ def send(approval_id, sender=None):
             db.execute('UPDATE deliveries SET state=?,receipt=? WHERE approval=? AND thread=?',
                        (state, json.dumps(receipt), approval_id, target['threadId']))
             db.commit()
+            if state in ('sent', 'submitted') and not recorded:
+                # Existing receipts above never recreate a deleted history entry on a retry.
+                recorded = True
+                try:
+                    history.record(db, approval_id, payload)
+                    db.commit()
+                except sqlite3.Error:
+                    db.rollback()
+                    history_error = 'Submission was accepted, but history could not be saved. Do not resend just to save history.'
             results.append({'threadId': target['threadId'], 'projectId': target['projectId'], 'title': target['title'], 'state': state, 'receipt': receipt})
-        return {'deliveries': results}
+        return {'deliveries': results, **({'historyError': history_error} if history_error else {})}

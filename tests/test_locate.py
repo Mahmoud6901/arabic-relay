@@ -156,6 +156,21 @@ class Tools(unittest.TestCase):
         self.assertEqual(locate.missing_tools(), {})
         self.assertIsNone(locate.tool_path('claude'))
 
+    def test_codex_desktop_updates_are_found_without_pinning_version(self):
+        binaries = self.local / 'OpenAI/Codex/bin'
+        old = make_exe(binaries / 'old-version/codex.exe')
+        locate.set_tool_path('codex', str(old))
+        old.unlink()
+        current = make_exe(binaries / 'current-version/codex.exe')
+        os.utime(current, (100, 100))
+        locate.set_tool_path('codex', '')  # reconnect using automatic discovery
+        self.assertEqual(locate.tool_path('codex'), current)
+        self.assertEqual(locate.missing_tools(), {})
+        updated = make_exe(binaries / 'updated-version/codex.exe')
+        os.utime(updated, (200, 200))
+        self.assertEqual(locate.tool_path('codex'), updated)
+        self.assertIsNone(locate.store.get_setting('codex_path') or None)
+
     def test_winget_links_are_found(self):
         codex = make_exe(self.local / 'Microsoft/WinGet/Links/codex.exe')
         claude = make_exe(self.local / 'Microsoft/WinGet/Links/claude.exe')
