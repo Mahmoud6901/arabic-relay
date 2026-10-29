@@ -30,4 +30,4 @@ version = {attr = "arabic_relay.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-arabic_relay = ["index.html", "fonts/*", "assets/*"]
+arabic_relay = ["index.html", "fonts/*", "assets/*", "browser_companion/*"]

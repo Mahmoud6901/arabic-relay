@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Arabic Relay Browser Companion",
+  "version": "0.1.0",
+  "description": "Discover ChatGPT and Claude conversations for Arabic Relay and send only when you click Send in Relay.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://chatgpt.com/*", "https://claude.ai/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "Arabic Relay", "default_popup": "options.html"},
+  "options_page": "options.html",
+  "content_scripts": [{"matches": ["https://chatgpt.com/*", "https://claude.ai/*"], "js": ["shared.js", "content.js"], "run_at": "document_idle"}]
+}

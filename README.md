@@ -3,7 +3,7 @@
 Dictate in Arabic, mixed with the English terms you already use, and get a clean English prompt for your AI coding
 tools. Arabic Relay transcribes your voice on your own computer with Whisper, turns the transcript into an English
 prompt with Codex CLI or Claude Code (your own sign-in), and sends it only when you click Send: to T3 Code sessions, a
-new ChatGPT or Claude desktop chat, or your clipboard.
+ChatGPT or Claude browser conversations, or your clipboard.
 
 ![Arabic Relay: an Arabic and English transcript next to the English prompt prepared from it](docs/screenshot.png)
 
@@ -40,6 +40,29 @@ Updates install automatically and are verified with the project's signing key be
 Your voice is transcribed on your computer. The transcript goes to OpenAI or Anthropic only when you prepare an
 English prompt, through your own Codex or Claude Code sign-in. There is no telemetry. Read [PRIVACY.md](PRIVACY.md)
 for every connection the app makes and what Copy diagnostics contains.
+
+## ChatGPT and Claude conversations
+
+The optional Chrome companion automatically lists conversation titles and exact links from your signed-in pages.
+You can select several conversations alongside T3 sessions. Sending opens each selected conversation in a new tab,
+checks that its message box is empty, inserts the English prompt, verifies the destination again, and clicks Send
+once. A browser submission is not a provider delivery receipt; check the conversation for its response. Uncertain
+submissions are never retried automatically.
+
+1. In desktop Relay, open **Settings → Browser conversations → Open companion folder**.
+2. In Chrome, open **Extensions → Manage extensions**, enable **Developer mode**, choose **Load unpacked**, and
+   select the folder Relay opened. This companion is bundled source, not a Chrome Web Store extension.
+3. Click **Get pairing code** in Relay. Open the companion from Chrome's Extensions menu and paste the code.
+4. Click **Open ChatGPT & Claude** in the companion. Sign in yourself if needed. Existing tabs opened before
+   installing the companion need to be reloaded once.
+
+Relay refreshes the list automatically while those pages are open. Discovery covers conversations currently
+loaded in navigation or search results, plus the open conversation. It is not a full account export: load older
+chats by scrolling or searching in the site. Browser-visible Claude Code sessions are included; offline sessions
+are disabled. Local-only Codex and Claude Code desktop sessions are **not** exposed by this connection.
+
+Pairing lasts until **Disconnect browser** in Relay Settings or a replacement pairing. Only one browser profile
+is paired at a time. The native desktop service uses `127.0.0.1:8791`; the development preview on port 8788 is separate.
 
 ## Your data
 

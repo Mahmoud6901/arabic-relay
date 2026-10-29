@@ -11,8 +11,19 @@ Arabic Relay runs on your computer. This page lists every connection it makes an
 | Hugging Face and PyPI | Once, during setup or when you click Re-download | Nothing personal: the app downloads the Whisper model (Hugging Face) and, with an NVIDIA GPU, NVIDIA's cuBLAS library (PyPI) | huggingface.co, files.pythonhosted.org |
 | GitHub Releases | Once a day, unless updates are Off | Nothing personal: the app asks for the latest release and downloads it | github.com |
 
-Sending is always your click. When you send to a ChatGPT or Claude desktop chat, the prompt goes to that app, which
-then sends it to its own service under your account. T3 Code delivery stays on your computer (`127.0.0.1`).
+Sending is always your click. When you send to a ChatGPT or Claude browser conversation, the prompt goes to the
+selected conversation on that website under the browser's signed-in account. T3 Code delivery stays on your computer (`127.0.0.1`).
+
+The optional browser companion has access only to `chatgpt.com`, `claude.ai`, and the local Relay service. It reads
+conversation titles and links from rendered navigation and the current page; it does not read cookies, access
+tokens, browser history, or conversation message history. It reads the selected message box to avoid replacing
+an unsent draft and to verify the exact text before clicking Send. Conversation discovery stays in Relay's memory
+and expires when the browser stops reporting. No full conversation export is performed.
+
+The companion is paired using a one-time code that expires after ten minutes. Relay encrypts its pairing token
+with Windows DPAPI in `browser.bin`; the extension stores its copy in private extension storage. Website content
+scripts cannot read this token. Disconnecting in Settings revokes it. Re-pairing replaces the previous browser
+connection. A submission already handed to the browser may still finish while disconnecting; check it before retrying.
 
 Cohere uploads begin only after you stop recording. Recordings longer than two minutes may be split at quiet pauses
 and transcribed with at most two requests at once. All audio samples are preserved in order. A failed section fails
