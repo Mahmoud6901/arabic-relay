@@ -225,7 +225,7 @@ class TranslationBoundary(unittest.TestCase):
         process = Mock()
         process.communicate.side_effect = [subprocess.TimeoutExpired('codex', 90), ('', '')]
         with patch.object(locate, 'tool_path', return_value=Path('codex.exe')), patch.object(translate.subprocess, 'Popen', return_value=process):
-            with self.assertRaisesRegex(ValueError, r'^Translation took too long\. Try a lower effort\.$'):
+            with self.assertRaisesRegex(ValueError, r'^Text preparation took too long\. Try a lower effort\.$'):
                 translate.translate('نص')
         self.assertEqual(process.communicate.call_args_list[0].kwargs['timeout'], 90)
 

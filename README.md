@@ -35,6 +35,16 @@ Updates install automatically and are verified with the project's signing key be
   signed in, to prepare English prompts. Without either, you can still dictate and type English yourself.
 - Optional: [Wispr Flow](https://wisprflow.ai) or a Cohere API key as other ways to dictate. Not affiliated.
 
+## From spoken notes to a prompt
+
+**Prepare English prompt** uses your selected Codex or Claude Code model to turn Arabic/English notes into
+clear instructions for an AI assistant. It organizes the objective, context, and constraints you provide,
+removes repetition, and preserves your intended scope. Questions stay questions, and requests for ideas
+do not become instructions to implement them. It does not add invented requirements.
+
+The finished prompt appears in the editor. You can edit it or click **Send** directly to deliver it to your
+selected sessions. Preparation itself does not send anything to those sessions.
+
 ## Privacy
 
 Your voice is transcribed on your computer. The transcript goes to OpenAI or Anthropic only when you prepare an
