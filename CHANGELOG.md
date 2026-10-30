@@ -3,6 +3,18 @@
 All notable changes to Arabic Relay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-30
+
+- Prepare English prompt now turns Arabic/English spoken notes into clear, actionable instructions instead of
+  translating them sentence by sentence. It organizes the objective, context, and constraints and removes repetition.
+- Preserve the user's scope: questions stay questions, requests for ideas stay requests for ideas, and prompt
+  preparation is instructed not to invent requirements or additional tasks.
+- Update the interface wording to describe prompt preparation. Send delivers the finished prompt to the selected
+  sessions without a separate approval step; preparation itself does not send it.
+
+This release carries an Ed25519 update signature verified by existing Arabic Relay installations.
+It does not have a Windows Authenticode publisher certificate.
+
 ## [0.2.0] - 2026-10-29
 
 - Select existing local Codex and Claude Code sessions directly. Codex receives prompts through its exact-session

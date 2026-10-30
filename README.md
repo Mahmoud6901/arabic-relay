@@ -19,7 +19,7 @@ existing Codex or Claude Code sessions, or your clipboard.
 `SHA256SUMS.txt` on the release page:
 
 ```powershell
-Get-FileHash .\ArabicRelay-Setup-0.2.0.exe -Algorithm SHA256
+Get-FileHash .\ArabicRelay-Setup-0.2.1.exe -Algorithm SHA256
 ```
 
 Updates install automatically and are verified with the project's signing key before they run. You can switch to
