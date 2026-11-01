@@ -114,70 +114,76 @@ h1,.section-title,.draft-head h2,.deliveries h2,dialog h2,.settings-header h2,.s
 html[data-mode=inline] #sourceCard,html[data-mode=inline] #voiceRetry{display:none!important}html[data-mode=inline] .drafts{grid-template-columns:1fr}html[data-mode=inline] #englishCard{border-left:0}html[data-mode=inline] #recordCard{border-radius:0;border:0;border-bottom:1px solid var(--line);margin:0;background:transparent}html[data-mode=inline] #recordCard .wave-section{display:none}html[data-mode=inline] #promptActions{margin:0;padding:16px 24px;border-top:1px solid var(--line);flex-wrap:wrap}html[data-mode=inline] #promptActions .muted{display:none}html[data-mode=inline] .draft-content{min-height:0;flex:none}html[data-mode=inline] #english{min-height:110px}html[data-mode=inline] #recordCard{padding:12px 24px}
 #inlineReview{padding:0 24px 18px;line-height:1.6;font-size:14px}#inlineReview[hidden]{display:none}#inlineDetails{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}#inlineDetails summary{cursor:pointer}#inlineDetails label{display:block;margin-top:12px;color:var(--muted)}#inlineDetails textarea,#inlineDetails input{width:100%;padding:12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;font:inherit}#inlineSource{min-height:100px;resize:vertical}#inlineOriginal,#inlineProvenance,#inlineCandidate{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}#inlineChanges{margin:12px 0}#inlineChanges bdi{unicode-bidi:isolate}#inlineChanges mark{background:var(--tint);color:var(--ink);padding:2px 5px;border-radius:4px}.inline-retry{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}#inlinePlayback{width:100%;margin-top:12px}#inlineStatus{color:var(--muted)}#inlineWarning{display:block;color:var(--ink);margin-top:12px}#inlineWarning[hidden]{display:none}
 /* An independent editor for the native recording shortcut. */
-:root[data-quick=true] .shell{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100vh;min-height:0}
-:root[data-quick=true] .main{grid-row:2;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
-:root[data-quick=true] body{overflow:hidden}
-:root[data-quick=true] .sidebar{grid-row:1;display:none;position:static;flex:none;height:auto;max-height:40vh;border-bottom:1px solid var(--line)}
-:root[data-quick=true] .sidebar.mobile-open{display:flex}
-:root[data-quick=true] .sidebar .brand,:root[data-quick=true] .side-footer,:root[data-quick=true] .hero-line,:root[data-quick=true] .wave-section,:root[data-quick=true] .edit-hint,:root[data-quick=true] .bottom,:root[data-quick=true] #historyButton,:root[data-quick=true] #quickOpen{display:none}
-:root[data-quick=true] .topbar{padding:8px 18px;min-height:50px;height:auto;flex:none}
-:root[data-quick=true] .topbar nav,:root[data-quick=true] #modeHelp{display:none}
-:root[data-quick=true] .record-info{gap:12px}
-:root[data-quick=true] .record-meta{gap:8px}
-#quickDock{flex:none;padding:0 18px;border-top:1px solid var(--line);background:var(--bg)}
-#quickDock .translation-bar{margin:0;position:static}
-#quickDock .translation-actions{width:auto;flex:1;flex-wrap:wrap}
-#quickDock #promptChoiceLabel{display:none}
-:root[data-quick=true] .content{padding:12px 18px;overflow-y:auto;flex:1;min-height:0;width:100%}
-:root[data-quick=true] .mobile-recipients{display:inline-flex;width:auto;margin:0}
-:root[data-quick=true] .drafts{display:block;flex:none}
-:root[data-quick=true] #sourceCard{display:none}
-:root[data-quick=true][data-source=true] #sourceCard{display:block;margin-bottom:12px}
-:root[data-quick=true] .draft-content{min-height:120px}
-:root[data-quick=true] .draft-content textarea{min-height:150px;font-size:16px}
-:root[data-quick=true] .record-card{padding:14px}
-:root[data-quick=true] .translation-bar{position:sticky;bottom:0;background:var(--bg);padding:12px 0;z-index:2;flex-direction:row;flex-wrap:wrap}
-:root[data-quick=true] .translation-bar .muted{display:none}
-:root[data-quick=true] #send{margin-left:auto}
+/* Shortcut review: fixed header + delivery dock, one independently scrolling editor.
+   At 620px: 20px gutters + 578px canvas + 2px frame = 620px. */
+#captureBar,#quickReviewHeader,#closeRecipients{display:none}
 #quickControls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:14px}
 #shortcutStatus{font-size:13px;color:var(--muted)}
-/* Shortcut surface: a quiet recording pill, then only the prompt and delivery controls. */
-#captureBar,#quickReviewHeader{display:none}
-:root[data-quick=true]{--bg:#17171c;--panel:#202027;--ink:#f1eff8;--muted:#a6a3b4;--line:#35333f;--accent:#c5b7f5;color-scheme:dark}
-:root[data-quick=true] body{background:var(--bg);border:1px solid var(--line);border-radius:18px}
-:root[data-quick=true] *, :root[data-quick=true] *::before{animation:none!important}
+:root[data-quick=true] body{height:100dvh;overflow:hidden;background:var(--bg);border:1px solid var(--line);border-radius:18px}
+:root[data-quick=true] *,:root[data-quick=true] *::before{animation:none!important}
+:root[data-quick=true] .shell{display:block;height:calc(100dvh - 2px);min-height:0}
+:root[data-quick=true] .main{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
+:root[data-quick=true] .topbar,:root[data-quick=true] .hero-line,:root[data-quick=true] #quickControls,:root[data-quick=true] #quickOpen,:root[data-quick=true] #shortcutStatus,:root[data-quick=true] .prompt-mode,:root[data-quick=true] #recordHome,:root[data-quick=true] #actionsHome,:root[data-quick=true] #recordCard,:root[data-quick=true] #sourceCard,:root[data-quick=true] .draft-head,:root[data-quick=true] .bottom,:root[data-quick=true] #translate,:root[data-quick=true] #clearDraft,:root[data-quick=true] #promptChoiceLabel{display:none!important}
 :root[data-quick=true][data-capture-stage=capture] .shell{position:absolute;left:-10000px;width:600px}
+:root[data-quick=true][data-capture-stage=capture][data-source=true] #sourceCard{display:block!important}
 :root[data-quick=true][data-capture-stage=capture] #captureBar{display:flex;align-items:center;gap:14px;height:86px;padding:14px 16px}
-#captureMark{display:flex;align-items:center;gap:3px;color:var(--accent);height:26px}
+#captureMark{display:flex;align-items:center;gap:3px;color:var(--blue);height:26px}
 #captureMark i{display:block;width:3px;height:12px;background:currentColor;border-radius:3px}
 #captureMark i:nth-child(2),#captureMark i:nth-child(4){height:22px}#captureMark i:nth-child(3){height:30px}
-#captureText{flex:1;min-width:0}#captureLabel{display:block;font:600 14px/1.4 system-ui,sans-serif;color:var(--ink)}#captureHint{display:block;font:12px/1.5 system-ui,sans-serif;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.capture-icon{border:1px solid var(--line);border-radius:50%;width:34px;height:34px;padding:0;background:transparent;color:var(--ink);display:grid;place-items:center;font:18px system-ui;flex:none;cursor:pointer}.capture-icon:hover{background:#35313f}.capture-icon:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.capture-icon:disabled{opacity:.35;cursor:default}
-:root[data-quick=true][data-capture-stage=review] #quickReviewHeader{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;font:600 14px system-ui,sans-serif}
-:root[data-quick=true] .topbar,:root[data-quick=true] #quickControls,:root[data-quick=true] .prompt-mode,:root[data-quick=true] #recordCard,:root[data-quick=true] #sourceCard,:root[data-quick=true] .draft-head,:root[data-quick=true] .draft-footer,:root[data-quick=true] #translate,:root[data-quick=true] #clearDraft{display:none!important}
-:root[data-quick=true][data-capture-stage=capture][data-source=true] #sourceCard{display:block!important}
-:root[data-quick=true] .content{gap:10px;padding:0 20px 14px;max-width:none}
-:root[data-quick=true] .drafts{order:-1;border:0;background:transparent;border-radius:0;flex:1;min-height:100px}
-:root[data-quick=true] #englishCard{border:0;background:transparent}
-:root[data-quick=true] .draft-content{padding:0}
-:root[data-quick=true] #english{min-height:220px;padding:0;font:17px/1.7 system-ui,sans-serif;color:var(--ink)}
-:root[data-quick=true] .destinations{padding:0;border:0;background:transparent;font:12px system-ui,sans-serif}
-:root[data-quick=true] .destinations h2,:root[data-quick=true] .empty-dest{display:none}
-:root[data-quick=true] .notice.success{display:none}
+#captureText{flex:1;min-width:0}#captureLabel{display:block;font-size:14px;line-height:1.4;color:var(--ink)}#captureHint{display:block;font-size:12px;line-height:1.5;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.capture-icon{border:1px solid var(--line-strong);border-radius:50%;width:40px;height:40px;padding:0;background:transparent;color:var(--ink);display:grid;place-items:center;font-family:inherit;font-size:20px;line-height:1;flex:none;cursor:pointer}
+.capture-icon:hover:not(:disabled){background:var(--tint)}
+:root[data-quick=true] :is(button,summary,input,textarea):focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+:root[data-quick=true] button:disabled{opacity:1;background:var(--panel);color:var(--muted);border-color:var(--line);cursor:default}
+:root[data-quick=true][data-capture-stage=review] #quickReviewHeader{display:flex;align-items:center;gap:12px;flex:none;padding:18px 20px}
+#quickReviewHeader .pywebview-drag-region{flex:1;min-width:0}
+#quickReviewHeader .quick-brand{font-size:12px;color:var(--muted);line-height:1.5}
+#quickReviewHeader .quick-brand b{color:var(--blue);font-weight:400}
+#quickReviewHeader h1{font:italic 28px/1.15 var(--serif);letter-spacing:0;margin-top:2px}
+:root[data-quick=true] .btn{font-family:Relay,RelayArabic,'Segoe UI',sans-serif;letter-spacing:0;font-size:14px}
+:root[data-quick=true] .content{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;width:100%;max-width:none;padding:0 20px 16px;margin:0}
+:root[data-quick=true] .content>*{flex-shrink:0}
+:root[data-quick=true] .drafts{order:0;display:block;flex:1 0 auto;min-height:0;background:none;border:0;border-radius:0}
+:root[data-quick=true] #englishCard{display:flex;flex-direction:column;min-height:100%;border:0;border-radius:14px;background:var(--panel)}
+:root[data-quick=true] .draft-content{padding:16px 18px 8px;flex:1;min-height:0}
+:root[data-quick=true] #english{width:100%;min-height:160px;height:100%;padding:0;font:16px/1.65 Relay,RelayArabic,'Segoe UI',sans-serif;color:var(--ink);background:transparent;resize:vertical}
+:root[data-quick=true] .draft-footer{display:flex;flex:none;justify-content:space-between;gap:12px;padding:12px 18px;font-size:12px;color:var(--muted)}
+:root[data-quick=true] #inlineReview{padding:12px 18px;border-top:1px solid var(--line);font-size:13px;line-height:1.55}
+:root[data-quick=true] #inlineReview .text-btn{min-height:36px;text-align:left;white-space:normal}
+:root[data-quick=true] #inlineDetails{margin-top:8px;padding-top:8px}
+:root[data-quick=true] #inlineDetails summary{min-height:36px;align-content:center}
 :root[data-quick=true][data-prompt-ready=true] #inlineReview{display:none}
-:root[data-quick=true] #quickDock{padding:0 20px}
-:root[data-quick=true] #promptActions{padding:12px 0;border:0;display:flex;flex-wrap:nowrap}
-:root[data-quick=true] #send{width:100%;border-radius:10px;background:#c5b7f5;color:#211a36}
-#closeRecipients{display:none}
-:root[data-quick=true] .sidebar{position:fixed;inset:0;z-index:20;height:100%;max-height:none;overflow:hidden;background:var(--bg);border:0;padding:18px}
+:root[data-quick=true] .notice{padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+:root[data-quick=true] .notice.success{display:none}
+:root[data-quick=true] #quickDock{flex:none;padding:16px 20px;border-top:1px solid var(--line);background:var(--bg)}
+:root[data-quick=true] #quickRecipients{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+:root[data-quick=true] #toggleRecipients{display:flex;flex:none;min-height:48px;height:auto;width:auto;margin:0;padding:12px 18px;border:1px solid var(--line-strong);border-radius:12px;line-height:22px;background:var(--panel)}
+:root[data-quick=true] #toggleRecipients::after{content:'↗';margin-left:12px;color:var(--muted)}
+:root[data-quick=true] .destinations{min-width:0;flex:1;padding:0;margin:0;border:0;background:none}
+:root[data-quick=true] .destinations h2{font-size:12px;margin:0;color:var(--muted)}
+:root[data-quick=true] .destinations .chips{margin-top:6px;max-height:64px;overflow-y:auto;scrollbar-width:thin}
+:root[data-quick=true] .destinations .chip{padding:4px 8px;font-size:12px}
+:root[data-quick=true] .empty-dest,:root[data-quick=true] .edit-hint{display:none}
+:root[data-quick=true] #promptActions{position:static;display:flex;gap:0;padding:0;margin:0;border:0;background:none}
+:root[data-quick=true] #promptActions .translation-actions,:root[data-quick=true] #promptActions .muted{display:none}
+:root[data-quick=true] #send{width:100%;height:48px;min-height:48px;margin:0;padding:12px 18px;border-radius:12px;background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+:root[data-quick=true] #send:disabled{background:var(--panel);color:var(--muted);border-color:var(--line)}
+:root[data-quick=true] .sidebar{display:none;position:fixed;inset:0;z-index:20;height:100%;max-height:none;overflow:hidden;background:var(--bg);border:0;padding:20px}
+:root[data-quick=true] .sidebar.mobile-open{display:flex}
+:root[data-quick=true] .sidebar .brand,:root[data-quick=true] .side-footer,:root[data-quick=true] #catalogSource{display:none}
 :root[data-quick=true] .sidebar .side-title,:root[data-quick=true] .sidebar .search{flex:none}
-:root[data-quick=true] .sidebar .side-title{gap:12px;padding:0 4px}
-:root[data-quick=true] .sidebar .number{margin-left:auto}
-:root[data-quick=true] #closeRecipients{display:inline-flex}
-:root[data-quick=true] #catalogSource{display:none}
+:root[data-quick=true] .sidebar .side-title{gap:12px;padding:0;font-family:Relay,RelayArabic,sans-serif;font-size:20px;letter-spacing:0}
+:root[data-quick=true] .sidebar .search:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+:root[data-quick=true] .sidebar .search input:focus-visible{outline:none}
+:root[data-quick=true] .sidebar .number{margin-left:auto;font:14px Relay,RelayArabic,sans-serif}
+:root[data-quick=true] #closeRecipients{display:inline-flex;min-height:44px;padding:10px 20px;background:var(--accent);color:var(--accent-ink);border-radius:12px}
+:root[data-quick=true] .sidebar .search{margin:16px 0 8px;min-height:44px;border-color:var(--line-strong);border-radius:10px}
 :root[data-quick=true] #projectList{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-top:8px}
-:root[data-quick=true] #projectList::-webkit-scrollbar{display:block;width:6px}
-:root[data-quick=true] #projectList::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+:root[data-quick=true] .session{min-height:44px;border-radius:8px}
+:root[data-quick=true] .session:has(input:checked){background:var(--panel)}
+:root[data-quick=true] .content::-webkit-scrollbar,:root[data-quick=true] #projectList::-webkit-scrollbar{display:block;width:6px}
+:root[data-quick=true] .content::-webkit-scrollbar-thumb,:root[data-quick=true] #projectList::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px}
+@media(max-width:420px){:root[data-quick=true] #quickRecipients{align-items:stretch;flex-direction:column;gap:8px}:root[data-quick=true] #toggleRecipients{justify-content:space-between}:root[data-quick=true] .destinations .chips{max-height:40px}:root[data-quick=true] #quickReviewHeader{gap:8px}}
 </style></head><body>
 <div id="captureBar"><span id="captureMark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div id="captureText" class="pywebview-drag-region"><strong id="captureLabel" role="status">Ready to dictate</strong><span id="captureHint">Ctrl + Alt + R</span></div><button id="captureStop" class="capture-icon" aria-label="Stop and prepare prompt" title="Stop and prepare prompt">■</button><button id="captureClose" class="capture-icon" aria-label="Cancel and close" title="Cancel and close">×</button></div>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0"><defs>
@@ -202,13 +208,13 @@ html[data-mode=inline] #sourceCard,html[data-mode=inline] #voiceRetry{display:no
  <div class="source" id="catalogSource">Loading your workspaces…</div><div id="projectList"></div>
  <div class="side-footer"><svg aria-hidden="true" focusable="false"><use href="#i-lock"/></svg><b>You choose where it goes.</b>Every selected destination receives the English prompt shown here.</div>
 </aside><main class="main" id="workspaceMain">
-<div id="quickReviewHeader"><span class="pywebview-drag-region">Your prompt</span><button id="quickRetry" class="text-btn" hidden>Retry preparation</button><button id="quickDismiss" class="capture-icon" aria-label="Close prompt" title="Close prompt">×</button></div>
+<div id="quickReviewHeader"><div class="pywebview-drag-region"><p class="quick-brand">Arabic Relay<b> · </b>Quick capture</p><h1>Your prompt</h1></div><button id="quickRetry" class="text-btn" hidden>Retry preparation</button><button id="quickRecord" class="capture-icon" aria-label="Record again" title="Record again"><svg aria-hidden="true"><use href="#i-mic"/></svg></button><button id="quickDismiss" class="capture-icon" aria-label="Close prompt" title="Close prompt">×</button></div>
  <header class="topbar"><nav class="steps" aria-label="Prompt workflow"><div class="step active" id="step1"><span class="circle">1</span>Speak</div><span class="step-line"></span><div class="step" id="step2"><span class="circle">2</span>Review</div><span class="step-line"></span><div class="step" id="step3"><span class="circle">3</span>Send</div></nav><div class="top-actions"><div class="pill" id="connectionPill"><i></i><span>Preview</span></div><button class="btn" id="refresh" title="Refresh projects and sessions"><svg aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg><span class="desktop-label">Refresh</span></button><button class="btn" id="historyButton" aria-haspopup="dialog" aria-controls="historyDialog">History</button><button class="btn" id="settingsButton" aria-haspopup="dialog" aria-controls="settingsDialog"><svg aria-hidden="true" focusable="false"><use href="#i-settings"/></svg>Settings</button></div></header>
  <div class="content"><div class="hero-line"><div><h1>Your words.<br> <em>Ready for action.</em></h1><p>Speak in Arabic and English. Shape the prompt. Send it with confidence.</p></div></div>
  <div id="quickControls" hidden><span id="quickKeyLabel">Ctrl + Alt + Space · quick capture</span><button class="text-btn" id="quickSource">Show transcript</button></div>
  <button class="btn" id="quickOpen" hidden>Quick capture <span class="keycap" id="quickOpenKey">Ctrl + Alt + Space</span></button><p id="shortcutStatus" hidden></p>
- <button class="btn mobile-recipients" id="toggleRecipients" >Choose recipients</button>
- <section class="card destinations" aria-label="Selected recipients"><div class="dest-icon"><svg aria-hidden="true" focusable="false"><use href="#i-target"/></svg></div><div><h2>Send to <span id="recipientLabel" style="color:var(--muted);font-weight:400">· no sessions selected</span></h2><div class="chips" id="chips"></div></div><span class="edit-hint">Choose sessions in the sidebar</span></section>
+ <button class="btn mobile-recipients" id="toggleRecipients" aria-label="Choose recipients" >Choose recipients</button>
+ <section class="card destinations" id="quickDestinations" aria-label="Selected recipients"><div class="dest-icon"><svg aria-hidden="true" focusable="false"><use href="#i-target"/></svg></div><div><h2>Send to <span id="recipientLabel" style="color:var(--muted);font-weight:400">· no sessions selected</span></h2><div class="chips" id="chips"></div></div><span class="edit-hint">Choose sessions in the sidebar</span></section>
  <div class="prompt-mode"><div class="mode-buttons" role="group" aria-label="Writing mode"><button class="btn" id="craftMode" aria-pressed="true">Craft a prompt</button><button class="btn" id="inlineMode" aria-pressed="false">Inline translation</button></div><p id="modeHelp">Organize your spoken notes into an actionable prompt.</p></div>
  <div id="recordHome"><section class="card record-card" id="recordCard"><div class="record-info"><button class="btn" id="wisprFocus" hidden>Focus transcript</button><button class="record-button" id="record" aria-label="Start Arabic and English dictation" aria-pressed="false"><svg aria-hidden="true" focusable="false"><use href="#i-mic"/></svg></button><div><h2 class="section-title" id="recordTitle">Start with your voice.</h2><p class="hint" id="recordHint">Click the microphone to start. Click again to stop.</p><div class="record-meta"><span class="keycap">Arabic + English</span><span class="keycap" id="speechStatus">Local speech · checking</span><button class="text-btn" id="speechSetup" aria-expanded="false" aria-controls="settingsDialog">Speech settings</button></div><div class="record-actions" id="recordActions" hidden><button class="btn primary" id="stopRecording">Stop &amp; transcribe</button><button class="btn record-cancel" id="cancelRecording">Cancel recording</button></div></div></div><div class="wave-section"><div class="wave" id="wave" aria-hidden="true"></div><p id="waveCaption">Ready when you are</p></div></section></div>
 <div class="voice-tools" id="voiceRetry"><button class="text-btn" id="retryAudio">Retry transcription</button><a class="text-btn" id="downloadAudio" download="dictation.webm">Save recording</a><span id="retryPrivacy">Retry runs locally. No API credits needed.</span></div><div class="drafts" id="draftWorkspace"><section class="card draft-card" id="sourceCard"><header class="draft-head"><div class="lang-icon">ع</div><div><h2>Arabic + English transcript</h2><p>Your voice, in your own words.</p></div><span class="badge">SOURCE</span></header><div class="draft-content"><textarea id="arabic" dir="rtl" lang="ar" aria-label="Arabic and English transcript" placeholder="قول فكرتك بطريقتك…
@@ -237,7 +243,7 @@ Prepare it from your words, or paste your own draft." maxlength="16000"></textar
  <div class="notice" id="notice" role="status" aria-live="polite"></div>
  <div class="bottom"><span><svg aria-hidden="true" focusable="false" style="width:12px;height:12px"><use href="#i-lock"/></svg>Click Send to deliver your English prompt.</span><span id="privacySummary">Local Whisper keeps audio on your computer. Prompt preparation uses your selected model.</span></div>
  <section class="card deliveries" id="deliveries" aria-live="polite"><h2>Delivery receipts</h2><div id="deliveryList"></div></section>
- </div><div id="quickDock" hidden></div></main></div>
+ </div><div id="quickDock" hidden><div id="quickRecipients"></div></div></main></div>
 
 <dialog class="settings-dialog history-dialog" id="historyDialog" aria-labelledby="historyTitle">
  <header class="settings-header"><div><h2 id="historyTitle">Sent history</h2><p>Your latest 20 sent English prompts. Text only, saved on this computer.</p></div><button class="btn" id="historyClose" aria-label="Close history">Close</button></header>
@@ -307,7 +313,7 @@ async function refresh(){if(busy)return;busy=true;update();renderProjects();try{
 $('projectList').addEventListener('change',e=>{const el=e.target;if(!el.matches('[data-thread]'))return;const p=projects.find(p=>p.id===el.dataset.project);const t=p.threads.find(t=>t.id===el.dataset.thread);if(t.disabled){el.checked=false;return;}if(el.checked){if(selected.size>=20){el.checked=false;notice('Select up to 20 sessions.');return;}selected.set(t.id,{...t,projectId:p.id,project:p.title});}else selected.delete(t.id);invalidate();});
 $('chips').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b)return;if(busy||listening)return;selected.delete(b.dataset.remove);invalidate();renderProjects();});$('search').addEventListener('input',renderProjects);$('refresh').addEventListener('click',refresh);
 let recipientsOpen=false;
-function showRecipients(open){recipientsOpen=open;$('sidebar').classList.toggle('mobile-open',open);$('toggleRecipients').textContent=open?'Done choosing':'Choose recipients';$('toggleRecipients').setAttribute('aria-expanded',String(open));if(quickCapture){$('workspaceMain').inert=open;(open?$('search'):$('toggleRecipients')).focus();}}
+function showRecipients(open){recipientsOpen=open;$('sidebar').classList.toggle('mobile-open',open);$('toggleRecipients').textContent=open?'Done choosing':'Choose recipients';$('toggleRecipients').setAttribute('aria-expanded',String(open));$('toggleRecipients').setAttribute('aria-label',open?'Done choosing':'Choose recipients');if(quickCapture){$('workspaceMain').inert=open;(open?$('search'):$('toggleRecipients')).focus();}}
 $('toggleRecipients').addEventListener('click',()=>showRecipients(!recipientsOpen));
 $('closeRecipients').addEventListener('click',()=>showRecipients(false));
 $('sidebar').addEventListener('keydown',e=>{if(e.key==='Escape'&&recipientsOpen){e.preventDefault();showRecipients(false);}});
@@ -504,7 +510,7 @@ function setInlineLayout(){
  $('inlineReview').hidden=!inlineMode();$('stopRecording').textContent=inlineMode()||quickCapture?'Stop & review':'Stop & transcribe';
  if(inlineMode()){$('inlineCapture').append($('recordCard'));$('inlineActions').append($('promptActions'));}
  else{$('recordHome').append($('recordCard'));$('actionsHome').append($('promptActions'));}
- if(quickCapture){$('quickDock').hidden=false;$('quickDock').append($('promptActions'));$('quickSource').hidden=inlineMode();if(inlineMode())document.documentElement.dataset.source='false';else if(dictationProvider==='wispr'){document.documentElement.dataset.source='true';$('quickSource').textContent='Hide transcript';}}
+ if(quickCapture){$('quickDock').hidden=false;$('quickDock').append($('promptActions'));$('quickRecipients').append($('toggleRecipients'),$('quickDestinations'));$('quickSource').hidden=inlineMode();if(inlineMode())document.documentElement.dataset.source='false';else if(dictationProvider==='wispr'){document.documentElement.dataset.source='true';$('quickSource').textContent='Hide transcript';}}
  $('english').setAttribute('dir',inlineMode()?'auto':'ltr');
  $('english').setAttribute('placeholder',inlineMode()?'Type or dictate English with Arabic phrases here. Only the Arabic phrases will change.':'An actionable English prompt starts here. Prepare it from your words, or paste your own draft.');
  $('modeHelp').textContent=inlineMode()?'Preview · Arabic phrases translate automatically. Review, then Send. Uses your selected model online.':'Organize your spoken notes into an actionable prompt.';
@@ -646,10 +652,11 @@ function updateQuickSurface(){
  $('captureLabel').textContent=listening?'Listening…':pending?'Preparing your prompt…':dictationProvider==='wispr'?'Dictate with Wispr Flow':'Ready to dictate';
  $('captureHint').textContent=listening?'Press your shortcut to finish':pending?'Your words are being prepared':dictationProvider==='wispr'?'Use your Flow shortcut to speak':'Press your recording shortcut';
  $('captureStop').hidden=dictationProvider==='wispr';$('captureStop').disabled=!listening;
- $('captureClose').disabled=pending;$('quickDismiss').disabled=pending||listening;
+ $('captureClose').disabled=pending;$('quickDismiss').disabled=pending||listening;$('quickRecord').disabled=pending||listening;
  $('quickRetry').hidden=inlineMode()||hasPrompt||!$('arabic').value.trim();$('quickRetry').disabled=pending||listening;
  if(window.pywebview?.api.quick_stage&&csrf&&quickNativeStage!==stage){quickNativeStage=stage;window.pywebview.api.quick_stage(stage,csrf).catch(()=>{quickNativeStage='';});}
 }
+$('quickRecord').addEventListener('click',()=>window.relayQuickToggle());
 $('captureStop').addEventListener('click',()=>finishRecording());
 $('quickRetry').addEventListener('click',()=>{quickFailure=false;$('translate').click();});
 for(const id of ['captureClose','quickDismiss'])$(id).addEventListener('click',()=>window.pywebview?.api.close_quick?.(csrf));

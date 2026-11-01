@@ -50,7 +50,7 @@ class QuickCapture:
                     x=int(screen.x / scale) + (screen_width - width) // 2,
                     y=int(screen.y / scale) + screen_height - height - 70,
                     min_size=(280, 80), frameless=True, easy_drag=False,
-                    on_top=True, background_color='#17171c', text_select=True)
+                    on_top=True, background_color='#000000', text_select=True)
                 self.window.events.closing += self.closing
                 self.window.events.closed += self.closed
             elif self.ready:

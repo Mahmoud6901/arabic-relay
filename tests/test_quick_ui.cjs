@@ -43,7 +43,11 @@ const {boot,flush}=require('./test_translation_ui.cjs');
  app.context.confirm=()=>false;
  n.get('english').listeners.input();
  assert.equal(app.context.window.relayQuickClose(),false);
- vm.runInContext('busy=true;',app.context);
+ // Record again follows the shortcut flow; Flow focuses without sending.
+ await n.get('quickRecord').click();assert.equal(n.get('arabic').focused,true);
+ assert.equal(app.posted('/api/send').length,1);
+ vm.runInContext('busy=true;updateQuickSurface();',app.context);
+ assert.equal(n.get('quickRecord').disabled,true);
  assert.equal(app.context.window.relayQuickClose(),false);
  vm.runInContext('busy=false;',app.context);
  // Clear stops the queued Flow preparation.
