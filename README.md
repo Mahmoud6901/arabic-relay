@@ -1,5 +1,22 @@
 # Arabic Relay
 
+### Quick capture from another app
+
+Keep Relay running (it can be minimized), then press **Ctrl + Alt + Space**.
+With Whisper or Cohere selected, this opens an independent popup and starts recording.
+Press the shortcut again, or **Stop & review**, to prepare an English prompt automatically.
+Review/edit the prompt, choose one or more sessions with **Choose recipients**, and click **Send**.
+Your main workspace's draft stays unchanged. Recording and preparation never send to a session automatically.
+
+With **Wispr Flow** selected, Relay's shortcut opens and focuses the popup; use **Flow's own shortcut** to record.
+Flow must insert into this focused popup. Relay prepares the inserted text after it settles; it does not intercept
+Flow's shortcut or control its microphone. Both Craft a prompt and Inline translation work in the popup.
+
+**Settings → Quick capture** offers Ctrl + Alt + Space, Ctrl + Alt + R, and Ctrl + Shift + Space.
+If another app reserves a combination, Relay displays the conflict and the **Quick capture** button still works.
+The shortcut is released when Relay exits; it does not run while Relay is closed. Popup drafts are temporary:
+closing an unsent draft asks before discarding it. Cancel recording discards the current audio.
+
 Dictate in Arabic, mixed with the English terms you already use, and get a clean English prompt for your AI coding
 tools. Arabic Relay transcribes your voice on your own computer with Whisper, turns the transcript into an English
 prompt with Codex CLI or Claude Code (your own sign-in), and sends it only when you click Send: to T3 Code sessions, a

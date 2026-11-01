@@ -15,9 +15,106 @@ os.environ['ARABIC_RELAY_NATIVE'] = '1'
 import webview
 
 from . import diagnostics, server, locate, paths, store, t3, updates
+from .hotkey import RecordingHotkey
+
+
+class QuickCapture:
+    """A separate, temporary editor; it never replaces the main window's draft."""
+    def __init__(self, choice='ctrl-alt-space'):
+        self.window = None
+        self.ready = False
+        self.exiting = False
+        self.allow_close = False
+        self.lock = threading.Lock()
+        self.hotkey = RecordingHotkey(self.toggle, choice)
+
+    def toggle(self):
+        if self.exiting or not self.lock.acquire(blocking=False):
+            return
+        try:
+            if self.window is None:
+                self.ready = False
+                self.allow_close = False
+                self.window = webview.create_window(
+                    'Arabic Relay — Quick capture', server.ORIGIN + '/?quick=1',
+                    js_api=DesktopApi(self, quick=True), width=700, height=840,
+                    min_size=(540, 620), on_top=True, background_color='#000000', text_select=True)
+                self.window.events.closing += self.closing
+                self.window.events.closed += self.closed
+            elif self.ready:
+                self.window.restore()
+                self.window.show()
+                self.window.evaluate_js('void window.relayQuickToggle()')
+        except Exception:
+            logging.exception('Quick capture could not open')
+        finally:
+            self.lock.release()
+
+    def loaded(self):
+        with self.lock:
+            if self.window and not self.exiting and not self.ready:
+                self.ready = True
+                self.window.evaluate_js('void window.relayQuickToggle()')
+
+    def closing(self):
+        if self.allow_close or self.exiting:
+            return True
+        # Closing events run on the UI thread. Query the editor on another thread.
+        threading.Thread(target=self.request_close, daemon=True).start()
+        return False
+
+    def request_close(self):
+        if not self.lock.acquire(blocking=False):
+            return
+        try:
+            if self.window and (not self.ready or self.window.evaluate_js('window.relayQuickClose()')):
+                self.allow_close = True
+                self.window.destroy()
+        finally:
+            self.lock.release()
+
+    def closed(self):
+        self.window = None
+        self.ready = False
+
+    def stop(self):
+        self.exiting = True
+        self.hotkey.stop()
+        if self.window:
+            self.window.destroy()
 
 
 class DesktopApi:
+    def __init__(self, capture=None, quick=False):
+        self._capture = capture
+        self._quick = quick
+
+    def shortcut_status(self, token):
+        if token != server.CSRF or not self._capture:
+            raise ValueError('Invalid request.')
+        key = self._capture.hotkey
+        return {'available': key.registered, 'error': key.error, 'choice': key.choice, 'label': key.label}
+
+    def set_shortcut(self, choice, token):
+        if token != server.CSRF or not self._capture or choice not in RecordingHotkey.CHOICES:
+            raise ValueError('Invalid shortcut.')
+        with self._capture.lock:
+            self._capture.hotkey.stop()
+            self._capture.hotkey = RecordingHotkey(self._capture.toggle, choice)
+            self._capture.hotkey.start()
+            store.set_setting('capture_shortcut', choice)
+        return self.shortcut_status(token)
+
+    def open_quick(self, token):
+        if token != server.CSRF or not self._capture:
+            raise ValueError('Invalid request.')
+        self._capture.toggle()
+
+    def quick_ready(self, token):
+        if token != server.CSRF or not self._quick or not self._capture:
+            raise ValueError('Invalid request.')
+        self._capture.loaded()
+
     def open_sign_in(self, url, token):
         if token != server.CSRF or not isinstance(url, str) or len(url) > 5000:
             raise ValueError('Invalid sign-in request.')
@@ -60,14 +157,17 @@ def run():
         updates.start_background()
     httpd = server.bind(server.PORT)
     (paths.DATA / 'instance.json').write_text(json.dumps({'pid': os.getpid(), 'port': httpd.server_address[1]}), encoding='utf-8')
+    capture = QuickCapture(store.get_setting('capture_shortcut', 'ctrl-alt-space'))
     try:
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        webview.create_window('Arabic Relay', server.ORIGIN, js_api=DesktopApi(),
+        window = webview.create_window('Arabic Relay', server.ORIGIN, js_api=DesktopApi(capture),
                              width=1380, height=940, min_size=(760, 650),
                              background_color='#000000', text_select=True)
-        webview.start(gui='edgechromium', private_mode=False,
+        window.events.closed += capture.stop
+        webview.start(capture.hotkey.start, gui='edgechromium', private_mode=False,
                       storage_path=str(paths.DATA / 'NativeWebView'), icon=str(server.ROOT / 'assets/relay.ico'))
     finally:
+        capture.stop()
         httpd.shutdown()
         httpd.server_close()
         updates.install_on_quit()

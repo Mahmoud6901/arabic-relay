@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Add a global Quick capture shortcut and separate desktop popup. Whisper/Cohere recordings prepare an English prompt automatically on Stop; Flow keeps its own microphone shortcut and its inserted text is prepared automatically.
+- Keep session selection and explicit Send in the popup, preserve the main workspace's draft, and offer alternative shortcuts in Settings when another app reserves the default combination.
+
 - Move writing mode to buttons above the cards. Inline mode automatically translates after recording or settled Flow/pasted/typed text, then lets you review and Send without a Translate click.
 
 - Add an optional Inline translation preview inside the English prompt card. Translate Arabic phrases while preserving surrounding English and technical literals; review and send in one card.

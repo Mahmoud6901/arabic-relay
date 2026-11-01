@@ -6,7 +6,7 @@ Arabic Relay runs on your computer. This page lists every connection it makes an
 
 | Connection | When | What is sent | Where |
 |---|---|---|---|
-| Codex CLI or Claude Code | You click **Prepare English prompt** or **Improve English spellings** (or turn on automatic spelling correction) | The transcript text | OpenAI or Anthropic, through your own sign-in and plan limits. Never an API key from your environment. |
+| Codex CLI or Claude Code | You click **Prepare English prompt** or **Improve English spellings**, turn on automatic spelling correction, or finish dictation in the **Quick capture** popup | The transcript text | OpenAI or Anthropic, through your own sign-in and plan limits. Never an API key from your environment. |
 | Inline translation (opt-in writing mode) | Automatically after an in-app recording, or after dictated/pasted/typed text and source edits settle in inline mode | Working transcript context, Arabic spans, and protected terms, only when Arabic phrases need translation | Your selected Codex or Claude Code provider online, through the existing sign-in. No translation-provider call for English-only input. |
 | Cohere | Only if you choose Cohere for dictation and save your own API key. Off by default. | Your recording | Cohere |
 | Hugging Face and PyPI | Once, during setup or when you click Re-download | Nothing personal: the app downloads the Whisper model (Hugging Face) and, with an NVIDIA GPU, NVIDIA's cuBLAS library (PyPI) | huggingface.co, files.pythonhosted.org |
@@ -15,6 +15,12 @@ Arabic Relay runs on your computer. This page lists every connection it makes an
 Sending is always your click. T3 delivery stays on your computer (`127.0.0.1`). Direct Codex delivery uses the
 installed CLI's exact-session queue. Direct Claude Code delivery uses that session's Windows named pipe. The
 receiving coding tool processes the prompt through its own signed-in provider and permissions.
+
+Quick capture registers only the selected global key combination while Relay is running. It does not log
+keystrokes or intercept Wispr Flow's shortcut. Flow controls its own microphone and online processing.
+Popup prompt preparation runs automatically after Whisper/Cohere transcription, or after Flow's inserted
+text settles. The popup skips the separate spelling-improvement call in Craft a prompt mode. Its draft
+and recipients are independent of the main workspace; sending still requires your click.
 
 Session discovery reads Codex metadata and Claude Desktop Code metadata. Relay shows titles, working folders,
 and availability; it does not export whole conversations. Claude's connection hook records a session ID, working

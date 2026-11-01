@@ -12,8 +12,9 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null}={}){
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null}={}){
  const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
+ if(provider)storage.set('relay-dictation-provider',provider);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
  for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
  for(const match of html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*>/g))if(/\shidden[\s>]/.test(match[0]))nodes.get(match[1]).hidden=true;
@@ -36,7 +37,7 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
    else if(url==='/api/send')data={deliveries:[]};
    else data={};
    return {ok,json:async()=>data};}});
- context.window={MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null}}};
+ context.window={location:{search:quick?'?quick=1':''},MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null,quick_ready:async()=>{},shortcut_status:async()=>({available:true})}}};
  for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
  return {nodes,requests,context,posted:url=>requests.filter(r=>r.url===url),choice:()=>choice};
 }

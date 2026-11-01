@@ -38,11 +38,37 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
    else throw new Error('Unexpected request '+url);
    return {ok:!((url==='/api/transcribe'&&fail)||(url==='/api/restore-english'&&restoreFailure)||(url==='/api/self-learning'&&learningFailure)),json:async()=>data};
  }});
-context.window={MediaRecorder:Recorder,addEventListener(){}};
+const quickMode=process.argv.includes('--quick');
+context.window={location:{search:quickMode?'?quick=1':''},MediaRecorder:Recorder,addEventListener(){}};
+context.confirm=()=>true;
 for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  await flush();
+ if(quickMode){
+  for(const provider of ['whisper','cohere']){
+   vm.runInContext(`dictationProvider='${provider}';cohereConfigured=true;autoSpellingEnabled=true;update();`,context);
+   const translations=requests.filter(r=>r.url==='/api/translate').length;
+   await context.window.relayQuickToggle();assert.equal(vm.runInContext('listening',context),true);
+   await context.window.relayQuickToggle();await flush();await flush();
+   assert.equal(vm.runInContext('listening',context),false);
+   assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);
+   assert.equal(nodes.get('english').value,'The deadline is after the meeting. Keep React.');
+   assert.equal(requests.filter(r=>r.url==='/api/restore-english').length,0);
+  }
+  const translations=requests.filter(r=>r.url==='/api/translate').length;
+  // Cancel stops the microphone and never transcribes or prepares a prompt.
+  await context.window.relayQuickToggle();const uploads=requests.filter(r=>r.url==='/api/transcribe').length;
+  await nodes.get('cancelRecording').click();await flush();
+  assert.equal(requests.filter(r=>r.url==='/api/transcribe').length,uploads);
+  assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations);
+  fail=true;await context.window.relayQuickToggle();await context.window.relayQuickToggle();await flush();
+  assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations);
+  assert.equal(nodes.get('voiceRetry').style.display,'flex');
+  assert.equal(requests.filter(r=>r.url==='/api/send').length,0);
+  console.log('Shortcut recordings: Whisper/Cohere start, stop, automatic prompt, cancellation and failure passed.');
+  return;
+ }
  assert.equal(nodes.get('speechStatus').textContent,'Local · Whisper large-v3 · GPU');
  assert.equal(nodes.get('autoSpelling').checked,false);
  assert.equal(nodes.get('selfLearning').checked,true);
