@@ -20,6 +20,17 @@ const {boot,flush}=require('./test_translation_ui.cjs');
  assert.equal(app.context.document.documentElement.dataset.promptReady,'true');
  assert.equal(app.posted('/api/send').length,0);
  assert.equal(app.posted('/api/restore-english').length,0);
+ // The full-popup picker focuses search and restores the unchanged draft on close.
+ n.get('toggleRecipients').click();
+ assert.equal(n.get('workspaceMain').inert,true);
+ assert.equal(n.get('search').focused,true);
+ n.get('closeRecipients').click();
+ assert.equal(n.get('workspaceMain').inert,false);
+ assert.equal(n.get('toggleRecipients').focused,true);
+ assert.equal(n.get('english').value,'Improve the login page.');
+ n.get('toggleRecipients').click();
+ n.get('sidebar').listeners.keydown({key:'Escape',preventDefault(){}});
+ assert.equal(n.get('workspaceMain').inert,false);
  // Review and choose recipients explicitly. No recipients from the main editor.
  assert.equal(n.get('send').disabled,true);
  vm.runInContext("selected.set('test',{id:'test',projectId:'desktop:direct:codex:test',title:'Test',project:'Test'});update();",app.context);
