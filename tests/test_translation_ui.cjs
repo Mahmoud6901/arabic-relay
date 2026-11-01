@@ -12,13 +12,13 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null}={}){
- const nodes=new Map(),requests=[],storage=new Map();
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null}={}){
+ const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
  for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
  for(const match of html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*>/g))if(/\shidden[\s>]/.test(match[0]))nodes.get(match[1]).hidden=true;
  let choice={tool:'codex',model:'gpt-6.1-sol',effort:'low'};
- const context=vm.createContext({console,Blob,Map,Set,JSON,Event:class{constructor(type){this.type=type;}},encodeURIComponent,decodeURIComponent,queueMicrotask,setTimeout,clearTimeout,
+ const context=vm.createContext({console,Blob,Map,Set,JSON,crypto:require('node:crypto').webcrypto,Event:class{constructor(type){this.type=type;}},encodeURIComponent,decodeURIComponent,queueMicrotask,setTimeout,clearTimeout,
   MediaRecorder:class{static isTypeSupported(){return true;}},
   document:{getElementById:id=>nodes.get(id)||null,createElement:element,documentElement:{dataset:{}},addEventListener(){}},
   localStorage:{getItem(key){return storage.get(key)||'';},setItem(key,value){storage.set(key,value);}},
@@ -32,6 +32,8 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null}=
    else if(url==='/api/prompt-choice'){if(choiceError){ok=false;data={error:choiceError};}else{choice=body;data={promptChoice:choice,promptLabel:label(choice)};}}
    else if(url==='/api/tool-path')data={kind:body.kind,path:body.path};
    else if(url==='/api/translate')data=translate;
+   else if(url.startsWith('/api/inline'))data=await inlineHandler?.(url,body)||{};
+   else if(url==='/api/send')data={deliveries:[]};
    else data={};
    return {ok,json:async()=>data};}});
  context.window={MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null}}};
@@ -40,7 +42,8 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null}=
 }
 async function openSettings(app){await app.nodes.get('settingsButton').click();await flush();}
 
-(async()=>{
+module.exports={boot,flush};
+if(require.main===module)(async()=>{
  // The label next to Prepare comes from status, before Settings ever opens.
  let app=boot();
  await flush();

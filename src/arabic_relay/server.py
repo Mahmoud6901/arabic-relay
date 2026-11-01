@@ -15,6 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import __version__, direct_sessions, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
+from . import inline
 
 ROOT = paths.ROOT
 PORT = int(os.environ.get('ARABIC_RELAY_PORT', '8788'))
@@ -139,8 +140,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not 0 < size <= speech.MAX_AUDIO:
                     raise ValueError('Keep each recording under 24 MB.')
                 vocabulary = urllib.parse.unquote(self.headers.get('X-Relay-Vocabulary', ''))
+                options = {}
+                if self.headers.get('X-Relay-Inline') == '1':
+                    options = {'inline_mode': True, 'retry': self.headers.get('X-Relay-Retry') == '1',
+                               'retry_seconds': float(self.headers.get('X-Relay-Retry-Seconds', '30'))}
+                    rid = self.headers.get('X-Relay-Inline-Request')
+                    if rid:
+                        if not isinstance(rid, str) or len(rid) > 100:
+                            raise ValueError('Invalid transcription request.')
+                        options['cancel_event'] = inline.job(rid)
                 return self.respond(speech.transcribe(self.rfile.read(size), self.headers.get('Content-Type', ''), vocabulary,
-                                               self.headers.get('X-Relay-Provider', 'whisper')))
+                                               self.headers.get('X-Relay-Provider', 'whisper'), **options))
             if not 0 < size <= 100000:
                 raise ValueError('Invalid request size.')
             body = json.loads(self.rfile.read(size))
@@ -196,6 +206,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(translate.restore_english(body.get('text'), body.get('vocabulary', '')))
             if self.path == '/api/translate':
                 return self.respond(translate.translate(body.get('arabic'), body.get('original', '')))
+            if self.path == '/api/inline':
+                return self.respond(inline.process(body))
+            if self.path == '/api/inline/cancel':
+                return self.respond(inline.cancel(body.get('requestId')))
+            if self.path == '/api/inline/validate':
+                return self.respond(inline.manual(body))
             if self.path == '/api/forget-vocabulary':
                 return self.respond(store.forget_vocabulary())
             if self.path == '/api/self-learning':
@@ -203,6 +219,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/auto-spelling':
                 return self.respond(store.set_auto_spelling(body.get('enabled')))
             if self.path == '/api/send':
+                if body.get('mode') == 'inline':
+                    inline.verify_send(body)
                 return self.respond(t3.send_prompt(body))
             if self.path == '/api/history/delete':
                 return self.respond(history.delete(body.get('id')))

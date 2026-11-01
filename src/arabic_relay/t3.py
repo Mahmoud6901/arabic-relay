@@ -173,7 +173,8 @@ def normalize_payload(body):
             raise ValueError('Each session can receive the prompt only once.')
         seen.add(target['threadId'])
         clean.append({'projectId': target['projectId'], 'threadId': target['threadId']})
-    return {'english': english.strip(), 'targets': clean}
+    # Keep the reviewed text byte-for-byte, including whitespace, through copy and dispatch.
+    return {'english': english, 'targets': clean}
 
 
 def prepare_send(body, request_id=None):

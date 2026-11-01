@@ -39,6 +39,7 @@ jobs:
           node tests/test_setup.cjs
           node tests/test_translation_ui.cjs
           node tests/test_ship_ui.cjs
+          node tests/test_inline_ui.cjs
       - name: Inno Setup
         run: |
           if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {

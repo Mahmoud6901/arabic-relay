@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 # av<17: faster-whisper 1.2.1 passes metadata_errors to av.open, which newer PyAV removed.
-dependencies = ["faster-whisper>=1.2", "av>=11,<17", "pywebview>=5", "cryptography>=43"]
+dependencies = ["faster-whisper==1.2.1", "av>=11,<17", "pywebview>=5", "cryptography>=43"]
 
 [project.optional-dependencies]
 gpu = ["nvidia-cublas-cu12"]  # CTranslate2 ships its own cuDNN

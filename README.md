@@ -37,6 +37,18 @@ Updates install automatically and are verified with the project's signing key be
 
 ## From spoken notes to a prompt
 
+The English prompt card has a **Writing mode** selector. **Craft a prompt** keeps the existing workflow.
+Choose **Inline translation · preview** for a single card: dictate or paste mixed English/Arabic, translate
+only the Arabic phrases, review the result, and click **Send**. The mode is saved on this computer.
+Recording controls and Send move into that card. No separate approval button is required.
+
+Inline mode preserves characters outside translated phrases exactly, including English wording and spacing.
+**Source and changes** contains the source editor, protected terms, replacements, and local recording playback.
+**Recognition is wrong / edit source** is available even for English-only recognition. Local recordings under
+15 seconds can request an alternate recognition; it never replaces the source without your selection.
+The selected Codex/Claude Code provider processes translation text online using your existing sign-in.
+English-only text bypasses the translation provider. See [implementation evidence and limitations](docs/inline-translation.md).
+
 **Prepare English prompt** uses your selected Codex or Claude Code model to turn Arabic/English notes into
 clear instructions for an AI assistant. It organizes the objective, context, and constraints you provide,
 removes repetition, and preserves your intended scope. Questions stay questions, and requests for ideas

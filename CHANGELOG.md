@@ -3,6 +3,12 @@
 All notable changes to Arabic Relay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- Add an optional Inline translation preview inside the English prompt card. Translate Arabic phrases while preserving surrounding English and technical literals; review and send in one card.
+- Add source comparison, protected terms, audio replay, cancellation, recognition warnings, and explicit alternate recognition for short local recordings.
+- Keep existing installations in Craft a prompt. The personal mixed-speech benchmark and calibrated automatic recovery remain pending; this preview makes no accuracy claim.
+
 ## [0.2.1] - 2026-10-30
 
 - Prepare English prompt now turns Arabic/English spoken notes into clear, actionable instructions instead of

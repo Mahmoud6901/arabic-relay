@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -233,7 +234,9 @@ def cohere_request(audio, key):
     return text.strip()
 
 
-def transcribe(audio, content_type, vocabulary='', provider='whisper'):
+def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
+    if retry and (not inline_mode or not 0 < retry_seconds <= 30):
+        raise ValueError('The recognition retry budget has expired. Edit the source manually.')
     if provider not in ('whisper', 'cohere'):
         raise ValueError('Choose Local Whisper or Cohere for microphone transcription.')
     formats = {'audio/webm': ('webm', lambda b: b.startswith(b'\x1aE\xdf\xa3')),
@@ -257,17 +260,24 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper'):
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
         raise ValueError('A recording is already being transcribed. Wait for it to finish.')
     try:
-        result = run_worker(folder, audio, keywords)
+        result = run_worker(folder, audio, keywords, **({'inline_mode': True, 'retry': retry, 'retry_seconds': retry_seconds,
+                                                        'cancel_event': cancel_event} if inline_mode else {}))
     finally:
         TRANSCRIBE_LOCK.release()
     response = transcript_result(result.get('text'), models.model_label(folder))
     response['device'] = result.get('device', 'GPU')
+    if inline_mode:
+        response.update(segments=result.get('segments', []), seconds=result.get('seconds'),
+                        effectiveAsrConfig=result.get('effectiveAsrConfig'), originalText=result.get('text', ''))
+        response['issues'] = [{'code': 'asr_uncertain', 'message': 'A phrase may have been recognized incorrectly. Replay or correct the source.'}
+                              for row in response['segments'] if (row.get('avg_logprob') is not None and row['avg_logprob'] < -1)
+                              or (row.get('compression_ratio') is not None and row['compression_ratio'] > 2.4)]
     if result.get('fallback'):
         response['notice'] = 'The GPU was unavailable, so this recording ran on the CPU.'
     return response
 
 
-def run_worker(folder, audio, keywords, check=False):
+def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
     """One worker launch per recording; a crash (no error code) gets one automatic relaunch, on the CPU if CUDA crashed."""
     device = speech_device()
     env = os.environ.copy()
@@ -276,7 +286,9 @@ def run_worker(folder, audio, keywords, check=False):
     for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'):
         env.pop(key, None)
     header = {'keywords': keywords, **({'check': True} if check else {})}
-    for attempt in (1, 2):
+    if inline_mode:
+        header.update(inline=True, retry=retry)
+    for attempt in ((1,) if retry else (1, 2)):
         # A CUDA driver fault can kill the worker before Python can fall back; the relaunch avoids the GPU.
         launched = device if attempt == 1 else 'cpu'
         command = paths.self_command('--speech-worker', str(os.getpid()), str(folder), launched)
@@ -284,7 +296,23 @@ def run_worker(folder, audio, keywords, check=False):
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        cwd=paths.DATA, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         try:
-            stdout, stderr = process.communicate(json.dumps(header).encode() + b'\n' + audio, timeout=300)
+            pending = json.dumps(header).encode() + b'\n' + audio
+            if cancel_event is None:
+                stdout, stderr = process.communicate(pending, timeout=retry_seconds if retry else 300)
+            else:
+                deadline = time.monotonic() + (retry_seconds if retry else 300)
+                while True:
+                    if cancel_event.is_set():
+                        process.kill()
+                        process.communicate()
+                        raise ValueError('Transcription cancelled. Your source is preserved.')
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(command, retry_seconds if retry else 300)
+                    try:
+                        stdout, stderr = process.communicate(pending, timeout=.25)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pending = None
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate()
@@ -301,6 +329,8 @@ def run_worker(folder, audio, keywords, check=False):
             return result
         if result.get('error'):
             messages = {'AUDIO_TOO_LONG': 'Use a recording under five minutes.',
+                        'MULTILINGUAL_REQUIRED': 'Inline dictation needs a multilingual Whisper model. Choose large-v3 or large-v3-turbo.',
+                        'RETRY_TOO_LONG': 'Retry a recording under 15 seconds, or edit the source manually.',
                         'INVALID_AUDIO': 'This recording could not be decoded. Record again or type your transcript.'}
             raise ValueError(messages.get(result['error'], 'Local speech failed on this recording. Record again; if it keeps failing, turn on Always use CPU in Settings.'))
         logging.getLogger(__name__).error('Speech worker stopped (exit %s, attempt %s): %s', process.returncode, attempt,

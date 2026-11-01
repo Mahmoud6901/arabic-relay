@@ -22,7 +22,7 @@ def watch_parent(pid):
     threading.Thread(target=wait, daemon=True).start()
 
 
-def run_model(samples, folder, device, keywords, check=False):
+def run_model(samples, folder, device, keywords, check=False, inline_mode=False, retry=False):
     """Transcribe on the requested device; if CUDA fails for any reason, retry once on the CPU."""
     from faster_whisper import BatchedInferencePipeline, WhisperModel
     hints = ', '.join(keywords) or None
@@ -33,6 +33,24 @@ def run_model(samples, folder, device, keywords, check=False):
         options = dict(task='transcribe', language=None, multilingual=True, beam_size=5,
                        vad_filter=not check, condition_on_previous_text=False,
                        initial_prompt=hints, hotwords=hints)
+        if inline_mode:
+            if not model.model.is_multilingual:
+                raise ValueError('MULTILINGUAL_REQUIRED')
+            options.update(word_timestamps=True, vad_filter=not retry,
+                           condition_on_previous_text=retry, initial_prompt=None)
+            segments, info = model.transcribe(samples, **options)
+            rows = []
+            for segment in segments:
+                rows.append({'start_s': segment.start, 'end_s': segment.end, 'text': segment.text,
+                             **{key: getattr(segment, key, None) for key in ('avg_logprob', 'no_speech_prob', 'compression_ratio')},
+                             'words': [{'start_s': word.start, 'end_s': word.end, 'text': word.word,
+                                        'probability': word.probability} for word in (segment.words or [])]})
+            return {'text': ''.join(row['text'] for row in rows), 'segments': rows,
+                    'effectiveAsrConfig': {'runtime': 'faster-whisper 1.2.1', 'task': 'transcribe',
+                     'multilingual': True, 'language': None, 'detectedLanguage': getattr(info, 'language', None),
+                     'path': 'serial', 'wordTimestamps': True, 'sampleRate': 16000, 'beamSize': 5,
+                     'vad': not retry, 'conditionOnPreviousText': retry,
+                     'device': device, 'computeType': 'float16' if device == 'cuda' else 'int8'}}
         if device == 'cuda' and not check and len(samples) >= 45 * 16000:
             try:
                 segments, _ = BatchedInferencePipeline(model=model).transcribe(samples, batch_size=2, **options)
@@ -46,10 +64,12 @@ def run_model(samples, folder, device, keywords, check=False):
 
     if device == 'cuda':
         try:
-            return {'text': run('cuda'), 'device': 'GPU', 'fallback': False}
+            value = run('cuda')
+            return {**(value if inline_mode else {'text': value}), 'device': 'GPU', 'fallback': False}
         except Exception as error:
             print('GPU failed, using the CPU: ' + type(error).__name__ + ': ' + str(error)[:500], file=sys.stderr, flush=True)
-    return {'text': run('cpu'), 'device': 'CPU', 'fallback': device == 'cuda'}
+    value = run('cpu')
+    return {**(value if inline_mode else {'text': value}), 'device': 'CPU', 'fallback': device == 'cuda'}
 
 
 def main(args):
@@ -85,7 +105,10 @@ def main(args):
     samples = decode_audio(io.BytesIO(audio), sampling_rate=16000)
     if not 0 < len(samples) <= 301 * 16000:
         raise ValueError('INVALID_AUDIO')
-    result = run_model(samples, folder, device, request['keywords'], check=request.get('check') is True)
+    if request.get('retry') and len(samples) > 15 * 16000:
+        raise ValueError('RETRY_TOO_LONG')
+    result = run_model(samples, folder, device, request['keywords'], check=request.get('check') is True,
+                       inline_mode=request.get('inline') is True, retry=request.get('retry') is True)
     print(json.dumps({**result, 'seconds': len(samples) / 16000}, ensure_ascii=True), flush=True)
 
 
@@ -101,6 +124,6 @@ def cli(args):
     except Exception as error:
         print(type(error).__name__ + ': ' + str(error)[:800], file=sys.stderr, flush=True)
         # Never expose raw runtime errors or paths/credentials in the interface.
-        code = str(error) if str(error) in ('AUDIO_TOO_LONG', 'INVALID_AUDIO') else 'LOCAL_SPEECH_FAILED'
+        code = str(error) if str(error) in ('AUDIO_TOO_LONG', 'INVALID_AUDIO', 'MULTILINGUAL_REQUIRED', 'RETRY_TOO_LONG') else 'LOCAL_SPEECH_FAILED'
         print(json.dumps({'error': code}), flush=True)
         sys.exit(1)

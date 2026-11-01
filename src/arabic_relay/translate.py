@@ -5,6 +5,7 @@ import re
 import sqlite3
 import subprocess
 import threading
+import time
 
 from . import locate, paths, store, translators
 
@@ -104,7 +105,7 @@ def failure_kind(text, model=True):
     return next((kind for kind, pattern in FAILURES if (model or kind != 'model') and pattern.search(text or '')), 'other')
 
 
-def run_tool(executable, choice, prompt):
+def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, output_limit=16000):
     """One run of the chosen tool. Returns (draft, None) or (None, (its error events, its stderr))."""
     env = os.environ.copy()
     # Always use the existing subscription login, never an inherited API billing key.
@@ -116,7 +117,21 @@ def run_tool(executable, choice, prompt):
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', cwd=paths.DATA,
                                    env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     try:
-        stdout, stderr = process.communicate(prompt[1], timeout=90)
+        if cancel_event is None:
+            stdout, stderr = process.communicate(prompt[1], timeout=90)
+        else:
+            deadline = deadline or time.monotonic() + 90
+            pending = prompt[1]
+            while True:
+                if cancel_event.is_set() or time.monotonic() >= deadline:
+                    process.kill()
+                    process.communicate()
+                    raise ValueError('Text preparation cancelled.' if cancel_event.is_set() else TIMEOUT)
+                try:
+                    stdout, stderr = process.communicate(pending, timeout=max(.001, min(.25, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    pending = None
     except subprocess.TimeoutExpired:
         process.kill()
         process.communicate()
@@ -153,7 +168,7 @@ def run_tool(executable, choice, prompt):
             if event.get('type') == 'item.completed' and isinstance(item, dict) and item.get('type') == 'agent_message':
                 drafts.append(item.get('text', ''))
     english = '\n'.join(drafts).strip()
-    if failed or not english or len(english) > 16000:
+    if failed or not english or len(english) > output_limit:
         return None, ('\n'.join(messages), stderr or '')
     return english, None
 
@@ -174,7 +189,7 @@ def note_claude_sign_in(signed_in):
         translators.CACHE['claude']['signedIn'] = None if signed_in else False
 
 
-def codex_text(source, instructions, notices=None):
+def codex_text(source, instructions, notices=None, **runtime):
     """Run the chosen tool on `source`. A removed model falls back to Default once; the note goes into `notices`."""
     choice = prompt_choice()
     tool = choice['tool']
@@ -187,13 +202,13 @@ def codex_text(source, instructions, notices=None):
         raise ValueError(f'{translators.NAMES[tool]} is already preparing a draft. Wait for it to finish.')
     try:
         prompt = (instructions, instructions + '\n\nSource text (JSON):\n' + json.dumps(source, ensure_ascii=False))
-        english, failure = run_tool(executable, choice, prompt)
+        english, failure = run_tool(executable, choice, prompt, **runtime)
         if english is None and failure_kind(failure[0]) == 'model' and choice['model']:
             removed, choice = choice['model'], {**choice, 'model': ''}
             save_choice(choice)
             if notices is not None:
                 notices.append(f'{removed} is no longer available, so Arabic Relay switched to the default model.')
-            english, failure = run_tool(executable, choice, prompt)
+            english, failure = run_tool(executable, choice, prompt, **runtime)
         if english is None:
             events, stderr = failure
             kind = failure_kind(events) if events else failure_kind(stderr, model=False)  # stderr is a last resort

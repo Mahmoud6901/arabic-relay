@@ -9,10 +9,31 @@ import threading
 import tokenize
 import unittest
 from unittest.mock import Mock, patch
-from arabic_relay import __version__, models, paths, server, translators
+from arabic_relay import __version__, inline, models, paths, server, translators
 
 
 class Routes(unittest.TestCase):
+    def test_inline_send_requires_exact_review_proof_before_destination(self):
+        def post(body):
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+            connection.request('POST', '/api/send', json.dumps(body), headers={
+                'Origin': server.ORIGIN, 'X-Relay-Token': server.CSRF, 'Content-Type': 'application/json'})
+            response = connection.getresponse()
+            result = response.status
+            response.read()
+            connection.close()
+            return result
+        request = {'text': '  Check MapView.\r\n', 'requestId': 'route-inline-test-123456', 'revision': 7}
+        result = inline.process(request)
+        body = {'mode': 'inline', 'english': request['text'], 'inlineRevision': 7,
+                'inlineProof': result['proof'], 'targets': [], 'requestId': request['requestId']}
+        with patch.object(server.t3, 'send_prompt', return_value={'deliveries': []}) as send:
+            self.assertEqual(post({**body, 'english': request['text'].strip()}), 400)
+            self.assertEqual(post({**body, 'inlineRevision': 8}), 400)
+            send.assert_not_called()
+            self.assertEqual(post(body), 200)
+            self.assertEqual(send.call_args.args[0]['english'], request['text'])
+
     def setUp(self):
         # POSTing every route must never touch real data or the real T3 service.
         temp = tempfile.TemporaryDirectory()

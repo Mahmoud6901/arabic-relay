@@ -7,6 +7,7 @@ Arabic Relay runs on your computer. This page lists every connection it makes an
 | Connection | When | What is sent | Where |
 |---|---|---|---|
 | Codex CLI or Claude Code | You click **Prepare English prompt** or **Improve English spellings** (or turn on automatic spelling correction) | The transcript text | OpenAI or Anthropic, through your own sign-in and plan limits. Never an API key from your environment. |
+| Inline translation (opt-in writing mode) | You click **Translate Arabic phrases**, or stop an in-app recording in inline mode | Working transcript context, Arabic spans, and protected terms, only when Arabic phrases need translation | Your selected Codex or Claude Code provider online, through the existing sign-in. No translation-provider call for English-only input. |
 | Cohere | Only if you choose Cohere for dictation and save your own API key. Off by default. | Your recording | Cohere |
 | Hugging Face and PyPI | Once, during setup or when you click Re-download | Nothing personal: the app downloads the Whisper model (Hugging Face) and, with an NVIDIA GPU, NVIDIA's cuBLAS library (PyPI) | huggingface.co, files.pythonhosted.org |
 | GitHub Releases | Once a day, unless updates are Off | Nothing personal: the app asks for the latest release and downloads it | github.com |
@@ -29,6 +30,11 @@ browser pairing and command endpoints no longer accept requests.
 ## What stays on your computer
 
 - Your voice. Local Whisper transcribes recordings in memory; audio is never saved unless you click **Save recording**.
+- Inline review retains the current recording in memory for playback and manual retry, for at most 30 minutes.
+  Clear draft, Discard recording, a new recording, Send, or closing the window releases it sooner. Source text,
+  replacement annotations, and recognition alternatives stay in the current window and are not saved as history.
+  Local retries stay local. Wispr Flow and Cohere retain their own online processing policies; Flow audio is not
+  available to Relay for replay. Cancellation cannot recall audio already uploaded to an online provider.
 - Settings, send history and the T3 sign-in (encrypted with Windows DPAPI), in `%LOCALAPPDATA%\Arabic Relay`.
 - Learned vocabulary and spelling corrections, in the same folder. You can view or clear them in Settings.
 - Logs in `%LOCALAPPDATA%\Arabic Relay\logs`; the main log rotates at 1 MB and keeps three files. Logs never contain transcripts or audio.
