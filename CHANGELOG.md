@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Move writing mode to buttons above the cards. Inline mode automatically translates after recording or settled Flow/pasted/typed text, then lets you review and Send without a Translate click.
+
 - Add an optional Inline translation preview inside the English prompt card. Translate Arabic phrases while preserving surrounding English and technical literals; review and send in one card.
 - Add source comparison, protected terms, audio replay, cancellation, recognition warnings, and explicit alternate recognition for short local recordings.
 - Keep existing installations in Craft a prompt. The personal mixed-speech benchmark and calibrated automatic recovery remain pending; this preview makes no accuracy claim.

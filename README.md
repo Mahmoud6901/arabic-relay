@@ -37,10 +37,11 @@ Updates install automatically and are verified with the project's signing key be
 
 ## From spoken notes to a prompt
 
-The English prompt card has a **Writing mode** selector. **Craft a prompt** keeps the existing workflow.
-Choose **Inline translation · preview** for a single card: dictate or paste mixed English/Arabic, translate
+The **Craft a prompt** and **Inline translation** buttons sit above the writing cards. **Craft a prompt** keeps the existing workflow.
+Choose **Inline translation** for a single card: dictate or paste mixed English/Arabic, translate
 only the Arabic phrases, review the result, and click **Send**. The mode is saved on this computer.
-Recording controls and Send move into that card. No separate approval button is required.
+Arabic phrases translate automatically after recording or once Flow/pasted/typed text settles.
+Recording controls and Send move into that card; no Translate click is needed. No separate approval button is required.
 
 Inline mode preserves characters outside translated phrases exactly, including English wording and spacing.
 **Source and changes** contains the source editor, protected terms, replacements, and local recording playback.

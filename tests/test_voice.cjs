@@ -28,6 +28,7 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
    else if(url==='/api/self-learning'){if(learningFailure)data={error:'Settings unavailable'};else{learningEnabled=JSON.parse(options.body).enabled;data={selfLearning:learningEnabled};}}
    else if(url==='/api/catalog')data={projects:[],live:false};
    else if(url==='/api/vocabulary'||url==='/api/forget-vocabulary')data={words:[],corrections:[]};
+   else if(url==='/api/inline'){const b=JSON.parse(options.body);data={status:'ready',requestId:b.requestId,revision:b.revision,workingText:b.text,outputText:'Add dark mode in React',issues:[],replacements:[]};}
    else if(url==='/api/translate')data={english:'The deadline is after the meeting. Keep React.',vocabulary:{words:['deadline','meeting','React'],corrections:[{heard:'الديدلاين',spelling:'deadline'}]}};
    else if(url==='/api/send')data={deliveries:[{projectId:'desktop:claude',threadId:'desktop-target',title:'Claude / New chat',state:'submitted',receipt:{delivery:'desktop_submit'}}]};
    else if(url==='/api/wispr/open')data={installed:false};
@@ -236,5 +237,21 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  assert.ok(submitted.includes('Submitted'));
  assert.ok(!submitted.includes('T3 confirmed'));
  assert.ok(!submitted.includes('t3-thread://'));
+ // Both built-in recording providers lead straight to the inline English preview after Stop.
+ await nodes.get('clearDraft').click();await nodes.get('inlineMode').click();
+ const oldSends=requests.filter(r=>r.url==='/api/send').length;
+ for(const provider of ['whisper','cohere']){
+  await nodes.get('clearDraft').click();
+  vm.runInContext(`dictationProvider='${provider}';cohereConfigured=true;autoSpellingEnabled=true;update();`,context);
+  const before=requests.filter(r=>r.url==='/api/inline').length;
+  const restores=requests.filter(r=>r.url==='/api/restore-english').length;
+  await nodes.get('record').click();await nodes.get('record').click();
+  await flush();await flush();await flush();
+  assert.equal(requests.filter(r=>r.url==='/api/inline').length,before+1);
+  assert.equal(nodes.get('english').value,'Add dark mode in React');
+  assert.equal(requests.filter(r=>r.url==='/api/restore-english').length,restores);
+ }
+ assert.equal(requests.filter(r=>r.url==='/api/send').length,oldSends);
+ vm.runInContext('clearAudio()',context);
  console.log('Immediate transcript display, optional Codex correction, saved preferences, failure preservation and existing providers verified. No real uploads, Codex calls or T3 sends.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -4,9 +4,9 @@ Status, 1 November 2026: usable opt-in implementation; the full implementation p
 
 ## Use and disable
 
-In the English prompt card, choose **Writing mode → Inline translation · preview**. This persists on this computer. Recording, the editor, source details, Copy, and Send share that card; the separate Arabic card is hidden. Choose **Craft a prompt** to restore the existing workflow.
+Above the writing cards, click **Inline translation**. This persists on this computer. Recording, the editor, source details, Copy, and Send share that card; the separate Arabic card is hidden. Choose **Craft a prompt** to restore the existing workflow.
 
-Type/paste mixed text and click **Translate Arabic phrases**, or record and stop to transcribe and translate automatically. Wispr Flow inserts text into the English editor; click Translate afterward. Review/edit the final English and choose destinations. **Send is the approval action**; no separate Approve button and no automatic dispatch. Settings still controls the translation tool, model, and effort. Inline mode bypasses English spelling restoration and prompt crafting, since either can change English words.
+Record and stop to transcribe and translate automatically. Wispr Flow inserts text into the English editor; Arabic phrases translate automatically after 1.2 seconds without another edit. Pasted/typed Arabic and source corrections use the same settling delay. IME composition waits until composition ends. English-only final edits stay local. There is no Translate button in this mode. Cancel stops queued/in-flight translation; a failed or cancelled attempt offers a deliberate Retry translation action without an automatic retry loop. Review/edit the final English and choose destinations. **Send is the approval action**; no separate Approve button and no automatic dispatch. Settings still controls the translation tool, model, and effort. Inline mode bypasses English spelling restoration and prompt crafting, since either can change English words.
 
 The existing signed-in Codex/Claude Code translator processes text online. No new paid API or model download was added. Whisper audio stays local. Selecting Cohere/Flow retains that provider's existing processing policy; those providers do not expose Whisper evidence/recovery here.
 
@@ -72,7 +72,7 @@ node tests/test_inline_ui.cjs
 
 Choose an already-downloaded multilingual model in Speech settings and an installed, signed-in Codex or Claude Code in Settings. The existing model setup is still available; selecting inline mode does not download anything. Local Whisper works offline once installed; online translation still needs the chosen provider connection. English-only pass-through works without it.
 
-1. English only: enter `Check FeatureLayer and MapView.` → Translate → exact same output, no translator call.
-2. Idiom: enter `I was talking to my manager, but he كان بيتهرب من المسؤولية, and I didn't know what to do.` → Translate → the Arabic phrase alone should convey avoiding responsibility. Review meaning before Send.
-3. Technical: enter `راجع src/app/map.ts and getUserById with --dry-run.` → Translate → inspect the three unchanged literals; Copy and Send use the same English text.
-4. Recognition mistake: enter `I need to arrange the code.` → Recognition is wrong → change working source to `I need to أراجع الكود.` → Translate → review `I need to review the code.` If audio is retained, replay or compare a short alternate recognition before correcting. No step sends until you click Send with a destination selected.
+1. English only: enter `Check FeatureLayer and MapView.` → automatic processing → exact same output, no translator call.
+2. Idiom: enter `I was talking to my manager, but he كان بيتهرب من المسؤولية, and I didn't know what to do.` → automatic processing → the Arabic phrase alone should convey avoiding responsibility. Review meaning before Send.
+3. Technical: enter `راجع src/app/map.ts and getUserById with --dry-run.` → automatic processing → inspect the three unchanged literals; Copy and Send use the same English text.
+4. Recognition mistake: enter `I need to arrange the code.` → Recognition is wrong → change working source to `I need to أراجع الكود.` → automatic processing → review `I need to review the code.` If audio is retained, replay or compare a short alternate recognition before correcting. No step sends until you click Send with a destination selected.
