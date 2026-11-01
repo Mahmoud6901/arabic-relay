@@ -12,7 +12,7 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null}={}){
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null}={}){
  const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
  if(provider)storage.set('relay-dictation-provider',provider);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
@@ -27,7 +27,7 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
   fetch:async(url,options)=>{const body=options?.body?JSON.parse(options.body):undefined;requests.push({url,body});let data,ok=true;
    if(url==='/api/status')data={csrf:'t',connected:false,selfLearning:true,autoSpelling:false,speechConfigured:true,setupNeeded:false,
      speechModel:'Whisper large-v3',speechDevice:'GPU',promptChoice:choice,promptLabel:label(choice),missingTools:{},...status};
-   else if(url==='/api/catalog')data={projects:[],live:false};
+   else if(url==='/api/catalog')data=catalogHandler?await catalogHandler():{projects:[],live:false};
    else if(url==='/api/vocabulary')data={words:[],corrections:[]};
    else if(url==='/api/translators')data={...translators,choice,label:label(choice)};
    else if(url==='/api/prompt-choice'){if(choiceError){ok=false;data={error:choiceError};}else{choice=body;data={promptChoice:choice,promptLabel:label(choice)};}}

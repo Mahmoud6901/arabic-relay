@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -18,6 +19,74 @@ from . import locate, models, paths, store
 
 
 TRANSCRIBE_LOCK = threading.Lock()
+PREPARE_LOCK = threading.Lock()
+PREPARED = None
+
+
+def worker_environment():
+    env = os.environ.copy()
+    env['HF_HUB_OFFLINE'] = '1'
+    env['HF_HUB_DISABLE_TELEMETRY'] = '1'
+    for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'):
+        env.pop(key, None)
+    return env
+
+
+def cancel_preparation(request_id=None):
+    """Discard only an unclaimed worker. A transcription already in progress owns its process."""
+    global PREPARED
+    with PREPARE_LOCK:
+        if PREPARED is None or (request_id is not None and PREPARED[0] != request_id):
+            return {'prepared': False}
+        _, _, process, timer = PREPARED
+        PREPARED = None
+        timer.cancel()
+    if process.poll() is None:
+        process.kill()
+    process.communicate()
+    return {'prepared': False}
+
+
+def prepare_worker(request_id):
+    """Load weights while the microphone records; no audio is collected or sent here."""
+    global PREPARED
+    if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,100}', request_id):
+        raise ValueError('Invalid recording request.')
+    folder, device = speech_model_path(), speech_device()
+    if folder is None:
+        return {'prepared': False}
+    with PREPARE_LOCK:
+        if TRANSCRIBE_LOCK.locked():
+            return {'prepared': False}
+        # Another window may already have a recording underway; never allocate a second model.
+        if PREPARED is not None:
+            return {'prepared': PREPARED[0] == request_id}
+        command = paths.self_command('--speech-worker', str(os.getpid()), str(folder), device, '--preload')
+        with locate.external_runtime():
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       cwd=paths.DATA, env=worker_environment(),
+                                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        timer = threading.Timer(360, cancel_preparation, args=(request_id,))
+        timer.daemon = True
+        PREPARED = (request_id, (str(folder), device), process, timer)
+        timer.start()
+    return {'prepared': True}
+
+
+def take_prepared_worker(folder, device):
+    global PREPARED
+    with PREPARE_LOCK:
+        if PREPARED is None:
+            return None
+        _, key, process, timer = PREPARED
+        PREPARED = None
+        timer.cancel()
+    if key == (str(folder), device) and process.poll() is None:
+        return process
+    if process.poll() is None:
+        process.kill()
+    process.communicate()
+    return None
 
 COHERE_MODEL = 'cohere-transcribe-arabic-07-2026'
 
@@ -280,11 +349,7 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
 def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
     """One worker launch per recording; a crash (no error code) gets one automatic relaunch, on the CPU if CUDA crashed."""
     device = speech_device()
-    env = os.environ.copy()
-    env['HF_HUB_OFFLINE'] = '1'
-    env['HF_HUB_DISABLE_TELEMETRY'] = '1'
-    for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'):
-        env.pop(key, None)
+    env = worker_environment()
     header = {'keywords': keywords, **({'check': True} if check else {})}
     if inline_mode:
         header.update(inline=True, retry=retry)
@@ -292,9 +357,11 @@ def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=Fa
         # A CUDA driver fault can kill the worker before Python can fall back; the relaunch avoids the GPU.
         launched = device if attempt == 1 else 'cpu'
         command = paths.self_command('--speech-worker', str(os.getpid()), str(folder), launched)
-        with locate.external_runtime():
-            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       cwd=paths.DATA, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        process = take_prepared_worker(folder, launched) if attempt == 1 and not check and not retry else None
+        if process is None:
+            with locate.external_runtime():
+                process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                           cwd=paths.DATA, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         try:
             pending = json.dumps(header).encode() + b'\n' + audio
             if cancel_event is None:

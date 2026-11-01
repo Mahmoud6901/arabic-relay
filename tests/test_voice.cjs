@@ -26,6 +26,7 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
    if(url==='/api/status')data={csrf:'test-token',connected:false,speechConfigured:true,speechModel:'Whisper large-v3',speechDevice:'GPU',setupNeeded:false,promptChoice:{tool:'codex',model:'',effort:'low'},promptLabel:'Codex · Default · low',selfLearning:learningEnabled,autoSpelling};
    else if(url==='/api/auto-spelling'){autoSpelling=JSON.parse(options.body).enabled;data={autoSpelling};}
    else if(url==='/api/self-learning'){if(learningFailure)data={error:'Settings unavailable'};else{learningEnabled=JSON.parse(options.body).enabled;data={selfLearning:learningEnabled};}}
+   else if(url==='/api/speech/prepare'||url==='/api/speech/cancel-prepare')data={prepared:true};
    else if(url==='/api/catalog')data={projects:[],live:false};
    else if(url==='/api/vocabulary'||url==='/api/forget-vocabulary')data={words:[],corrections:[]};
    else if(url==='/api/inline'){const b=JSON.parse(options.body);data={status:'ready',requestId:b.requestId,revision:b.revision,workingText:b.text,outputText:'Add dark mode in React',issues:[],replacements:[]};}
@@ -49,7 +50,9 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   for(const provider of ['whisper','cohere']){
    vm.runInContext(`dictationProvider='${provider}';cohereConfigured=true;autoSpellingEnabled=true;update();`,context);
    const translations=requests.filter(r=>r.url==='/api/translate').length;
+   const preloads=requests.filter(r=>r.url==='/api/speech/prepare').length;
    await context.window.relayQuickToggle();assert.equal(vm.runInContext('listening',context),true);
+   assert.equal(requests.filter(r=>r.url==='/api/speech/prepare').length,preloads+(provider==='whisper'?1:0));
    await context.window.relayQuickToggle();await flush();await flush();
    assert.equal(vm.runInContext('listening',context),false);
    assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);

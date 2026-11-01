@@ -22,14 +22,14 @@ def watch_parent(pid):
     threading.Thread(target=wait, daemon=True).start()
 
 
-def run_model(samples, folder, device, keywords, check=False, inline_mode=False, retry=False):
+def run_model(samples, folder, device, keywords, check=False, inline_mode=False, retry=False, loaded_model=None):
     """Transcribe on the requested device; if CUDA fails for any reason, retry once on the CPU."""
     from faster_whisper import BatchedInferencePipeline, WhisperModel
     hints = ', '.join(keywords) or None
 
     def run(device):
-        model = WhisperModel(folder, device=device, compute_type='float16' if device == 'cuda' else 'int8',
-                             local_files_only=True)
+        model = loaded_model[1] if loaded_model and loaded_model[0] == device else WhisperModel(
+            folder, device=device, compute_type='float16' if device == 'cuda' else 'int8', local_files_only=True)
         options = dict(task='transcribe', language=None, multilingual=True, beam_size=5,
                        vad_filter=not check, condition_on_previous_text=False,
                        initial_prompt=hints, hotwords=hints)
@@ -86,6 +86,14 @@ def main(args):
         from .models import gpu_runtime_dir
         runtime = gpu_runtime_dir()
         handle = os.add_dll_directory(str(runtime)) if runtime else None
+    loaded_model = None
+    if '--preload' in args[3:]:
+        try:
+            from faster_whisper import WhisperModel
+            loaded_model = (device, WhisperModel(folder, device=device,
+                            compute_type='float16' if device == 'cuda' else 'int8', local_files_only=True))
+        except Exception:
+            pass  # The normal transcription path retains its GPU/CPU error handling.
     header = sys.stdin.buffer.readline(32769)
     if len(header) > 32768 or not header.endswith(b'\n'):
         raise ValueError('INVALID_AUDIO')
@@ -108,7 +116,8 @@ def main(args):
     if request.get('retry') and len(samples) > 15 * 16000:
         raise ValueError('RETRY_TOO_LONG')
     result = run_model(samples, folder, device, request['keywords'], check=request.get('check') is True,
-                       inline_mode=request.get('inline') is True, retry=request.get('retry') is True)
+                       inline_mode=request.get('inline') is True, retry=request.get('retry') is True,
+                       loaded_model=loaded_model)
     print(json.dumps({**result, 'seconds': len(samples) / 16000}, ensure_ascii=True), flush=True)
 
 

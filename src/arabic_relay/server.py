@@ -45,6 +45,14 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def respond(self, data, status=200, content_type='application/json; charset=utf-8'):
+        route = urllib.parse.urlparse(self.path).path
+        if getattr(self, 'started', None) is not None and route in (
+                '/api/status', '/api/catalog', '/api/direct/catalog', '/api/transcribe',
+                '/api/translate', '/api/inline', '/api/restore-english', '/api/speech/prepare'):
+            elapsed = round((time.monotonic() - self.started) * 1000)
+            if elapsed >= 1000 or route in ('/api/transcribe', '/api/translate', '/api/inline'):
+                # Only the fixed route, duration and HTTP status; never content, audio, IDs or tokens.
+                logging.info('Request timing: %s %d ms (HTTP %d)', route, elapsed, status)
         raw = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header('Content-Type', content_type)
@@ -60,6 +68,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get('Host') == urllib.parse.urlparse(ORIGIN).netloc
 
     def do_GET(self):
+        self.started = time.monotonic()
         if not self.valid_host():
             return self.respond({'error': 'Invalid host'}, 403)
         path = urllib.parse.urlparse(self.path)
@@ -132,6 +141,7 @@ class Handler(BaseHTTPRequestHandler):
         self.respond({'error': str(error)}, 400)
 
     def do_POST(self):
+        self.started = time.monotonic()
         if not self.valid_host() or self.headers.get('Origin') != ORIGIN or self.headers.get('X-Relay-Token') != CSRF:
             return self.respond({'error': 'Request must originate from this Relay page.'}, 403)
         try:
@@ -156,6 +166,12 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
                 raise ValueError('Invalid request.')
+            if self.path == '/api/speech/prepare':
+                return self.respond(speech.prepare_worker(body.get('requestId')))
+            if self.path == '/api/speech/cancel-prepare':
+                if not isinstance(body.get('requestId'), str):
+                    raise ValueError('Invalid recording request.')
+                return self.respond(speech.cancel_preparation(body['requestId']))
             if self.path == '/api/direct/claude/connect':
                 return self.respond(direct_sessions.connect_claude())
             if self.path == '/api/direct/codex/connect':

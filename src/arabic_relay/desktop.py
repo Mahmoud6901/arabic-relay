@@ -14,7 +14,7 @@ os.environ['ARABIC_RELAY_NATIVE'] = '1'
 
 import webview
 
-from . import diagnostics, server, locate, paths, store, t3, updates
+from . import diagnostics, server, locate, paths, speech, store, t3, updates
 from .hotkey import RecordingHotkey
 
 
@@ -201,6 +201,7 @@ def run():
                       storage_path=str(paths.DATA / 'NativeWebView'), icon=str(server.ROOT / 'assets/relay.ico'))
     finally:
         capture.stop()
+        speech.cancel_preparation()
         httpd.shutdown()
         httpd.server_close()
         updates.install_on_quit()
