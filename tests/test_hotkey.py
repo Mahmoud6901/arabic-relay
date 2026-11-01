@@ -38,9 +38,15 @@ class Shortcut(unittest.TestCase):
             capture.toggle()
             capture.toggle()  # second press during initial loading does not duplicate
             create.assert_called_once()
-            self.assertEqual(create.call_args.kwargs['height'], 500)
-            self.assertEqual(create.call_args.kwargs['min_size'], (540, 500))
-            self.assertEqual(create.call_args.kwargs['y'], 30)
+            self.assertEqual(create.call_args.kwargs['height'], 88)
+            self.assertEqual(create.call_args.kwargs['min_size'], (280, 80))
+            self.assertEqual(create.call_args.kwargs['y'], 442)
+            self.assertTrue(create.call_args.kwargs['frameless'])
+            capture.set_stage('review')
+            window.resize.assert_called_once_with(620, 500)
+            window.move.assert_called_once_with(90, 30)
+            capture.set_stage('review')
+            window.resize.assert_called_once()
             window.evaluate_js.assert_not_called()
             capture.loaded()
             capture.loaded()  # bridge + initial refresh may both report ready
@@ -77,6 +83,14 @@ class Shortcut(unittest.TestCase):
             api.quick_ready(server.CSRF)
         desktop.DesktopApi(capture, quick=True).quick_ready(server.CSRF)
         capture.loaded.assert_called_once()
+        with self.assertRaises(ValueError):
+            api.quick_stage('review', server.CSRF)
+        with self.assertRaises(ValueError):
+            desktop.DesktopApi(capture, quick=True).quick_stage('invalid', server.CSRF)
+        with self.assertRaises(ValueError):
+            api.close_quick(server.CSRF)
+        desktop.DesktopApi(capture, quick=True).quick_stage('review', server.CSRF)
+        capture.set_stage.assert_called_once_with('review')
 
 
 if __name__ == '__main__':

@@ -25,6 +25,7 @@ class QuickCapture:
         self.ready = False
         self.exiting = False
         self.allow_close = False
+        self.stage = 'capture'
         self.lock = threading.Lock()
         self.hotkey = RecordingHotkey(self.toggle, choice)
 
@@ -40,14 +41,16 @@ class QuickCapture:
                 # WinForms reports physical bounds; create_window takes DPI-scaled units.
                 scale = ctypes.windll.user32.GetDpiForSystem() / 96
                 screen_width, screen_height = int(screen.width / scale), int(screen.height / scale)
-                width, height = min(700, screen_width - 80), min(840, screen_height - 100)
+                self.screen_bounds = (int(screen.x / scale), int(screen.y / scale), screen_width, screen_height)
+                self.stage = 'capture'
+                width, height = min(420, screen_width - 40), 88
                 self.window = webview.create_window(
                     'Arabic Relay — Quick capture', server.ORIGIN + '/?quick=1',
                     js_api=DesktopApi(self, quick=True), width=width, height=height,
                     x=int(screen.x / scale) + (screen_width - width) // 2,
-                    y=int(screen.y / scale) + 30,
-                    min_size=(min(540, width), min(620, height)),
-                    on_top=True, background_color='#000000', text_select=True)
+                    y=int(screen.y / scale) + screen_height - height - 70,
+                    min_size=(280, 80), frameless=True, easy_drag=False,
+                    on_top=True, background_color='#17171c', text_select=True)
                 self.window.events.closing += self.closing
                 self.window.events.closed += self.closed
             elif self.ready:
@@ -64,6 +67,17 @@ class QuickCapture:
             if self.window and not self.exiting and not self.ready:
                 self.ready = True
                 self.window.evaluate_js('void window.relayQuickToggle()')
+
+    def set_stage(self, stage):
+        with self.lock:
+            if not self.window or self.stage == stage:
+                return
+            self.stage = stage
+            x, y, screen_width, screen_height = self.screen_bounds
+            width = min(620 if stage == 'review' else 420, screen_width - 40)
+            height = min(560, screen_height - 100) if stage == 'review' else 88
+            self.window.resize(width, height)
+            self.window.move(x + (screen_width - width) // 2, y + screen_height - height - 70)
 
     def closing(self):
         if self.allow_close or self.exiting:
@@ -123,6 +137,16 @@ class DesktopApi:
         if token != server.CSRF or not self._quick or not self._capture:
             raise ValueError('Invalid request.')
         self._capture.loaded()
+
+    def quick_stage(self, stage, token):
+        if token != server.CSRF or not self._quick or not self._capture or stage not in ('capture', 'review'):
+            raise ValueError('Invalid request.')
+        self._capture.set_stage(stage)
+
+    def close_quick(self, token):
+        if token != server.CSRF or not self._quick or not self._capture:
+            raise ValueError('Invalid request.')
+        self._capture.request_close()
 
     def open_sign_in(self, url, token):
         if token != server.CSRF or not isinstance(url, str) or len(url) > 5000:

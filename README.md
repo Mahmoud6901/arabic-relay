@@ -3,14 +3,16 @@
 ### Quick capture from another app
 
 Keep Relay running (it can be minimized), then press **Ctrl + Alt + Space**.
-With Whisper or Cohere selected, this opens an independent popup and starts recording.
-Press the shortcut again, or **Stop & review**, to prepare an English prompt automatically.
+With Whisper or Cohere selected, this opens a small floating recording bar and starts recording.
+Press the shortcut again, or the square Stop button, to prepare an English prompt automatically.
+The bar expands into a focused, editable prompt window when preparation finishes.
 Review/edit the prompt, choose one or more sessions with **Choose recipients**, and click **Send**.
 Your main workspace's draft stays unchanged. Recording and preparation never send to a session automatically.
 
 With **Wispr Flow** selected, Relay's shortcut opens and focuses the popup; use **Flow's own shortcut** to record.
 Flow must insert into this focused popup. Relay prepares the inserted text after it settles; it does not intercept
-Flow's shortcut or control its microphone. Both Craft a prompt and Inline translation work in the popup.
+Flow's shortcut or control its microphone. The popup uses the main workspace's selected writing mode
+(Craft a prompt or Inline translation), without repeating its settings or transcript cards.
 
 **Settings → Quick capture** offers Ctrl + Alt + Space, Ctrl + Alt + R, and Ctrl + Shift + Space.
 If another app reserves a combination, Relay displays the conflict and the **Quick capture** button still works.

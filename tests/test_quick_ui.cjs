@@ -9,11 +9,15 @@ const {boot,flush}=require('./test_translation_ui.cjs');
  assert.equal(n.get('arabic').focused,true);
  assert.match(n.get('notice').textContent,/Wispr Flow shortcut/);
  assert.equal(app.context.document.documentElement.dataset.source,'true');
+ assert.equal(app.context.document.documentElement.dataset.captureStage,'capture');
+ assert.equal(n.get('captureStop').hidden,true);
  n.get('arabic').value='حسن صفحة الدخول';n.get('arabic').listeners.input();
  assert.equal(n.get('send').disabled,true);
  await new Promise(r=>setTimeout(r,1250));await flush();
  assert.equal(app.posted('/api/translate').length,1);
  assert.equal(n.get('english').value,'Improve the login page.');
+ assert.equal(app.context.document.documentElement.dataset.captureStage,'review');
+ assert.equal(app.context.document.documentElement.dataset.promptReady,'true');
  assert.equal(app.posted('/api/send').length,0);
  assert.equal(app.posted('/api/restore-english').length,0);
  // Review and choose recipients explicitly. No recipients from the main editor.
