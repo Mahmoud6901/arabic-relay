@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/icon.svg"><title>Arabic Relay — Speak. Review. Send.</title>
+<dialog id="draftConfirm" aria-labelledby="draftConfirmTitle" aria-describedby="draftConfirmDescription"><p class="confirm-brand">Arabic Relay · Quick capture</p><h2 id="draftConfirmTitle">Discard this draft?</h2><p id="draftConfirmDescription"></p><div class="dialog-actions"><button class="btn" id="draftConfirmCancel" autofocus>Keep draft</button><button class="btn" id="draftConfirmAccept">Discard draft</button></div></dialog>
 <script>
 try{document.documentElement.dataset.theme=localStorage.getItem('relay-theme')==='light'?'light':'dark';}catch{document.documentElement.dataset.theme='dark';}
 </script>
@@ -117,6 +118,15 @@ html[data-mode=inline] #sourceCard,html[data-mode=inline] #voiceRetry{display:no
 /* Shortcut review: fixed header + delivery dock, one independently scrolling editor.
    At 620px: 20px gutters + 578px canvas + 2px frame = 620px. */
 #captureBar,#quickReviewHeader,#closeRecipients{display:none}
+#draftConfirm{width:min(420px,calc(100% - 40px));max-height:calc(100dvh - 40px);margin:auto;padding:26px;border:1px solid var(--line-strong);border-radius:18px;background:var(--panel);box-shadow:0 24px 80px #0005}
+#draftConfirm .confirm-brand{margin:0 0 18px;color:var(--blue);font-size:12px}
+#draftConfirm h2{font-size:30px;line-height:1.15;margin:0 0 12px}
+#draftConfirm p{margin:0;color:var(--muted);font-size:14px;line-height:1.65}
+#draftConfirm .dialog-actions{gap:10px;margin-top:24px}
+#draftConfirm .btn{min-height:42px;flex:1;justify-content:center;font-family:Relay,RelayArabic,'Segoe UI',sans-serif;letter-spacing:0;font-size:14px}
+#draftConfirmAccept{color:var(--danger);border-color:var(--danger)}
+#draftConfirmAccept:hover{background:var(--tint)}
+#draftConfirm::backdrop{background:#0009;backdrop-filter:blur(4px)}
 #quickControls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:14px}
 #shortcutStatus{font-size:13px;color:var(--muted)}
 :root[data-quick=true] body{height:100dvh;overflow:hidden;background:var(--bg);border:1px solid var(--line);border-radius:18px}
@@ -669,7 +679,7 @@ window.relayQuickToggle=async()=>{
   $('flowCapture').focus();
   notice('Use your Wispr Flow shortcut (normally Ctrl + Win) to dictate here. Relay automatically prepares the result. Review it and choose sessions before Send.',true);return;
  }
- if(($('english').value.trim()||$('arabic').value.trim())&&!confirm('Replace this popup draft with a new recording?'))return;
+ if(($('english').value.trim()||$('arabic').value.trim())&&!await confirmDraft('Start a new recording?','Your current popup draft will be discarded. Your main workspace stays unchanged.','Start recording'))return;
  quickReview=false;quickFailure=false;quickFlowCapturing=false;
  $('clearDraft').click();await $('record').click();
 };
@@ -712,9 +722,36 @@ $('quickRecord').addEventListener('click',()=>window.relayQuickToggle());
 $('captureStop').addEventListener('click',()=>finishRecording());
 $('quickRetry').addEventListener('click',()=>{quickFailure=false;$('translate').click();});
 for(const id of ['captureClose','quickDismiss'])$(id).addEventListener('click',()=>window.pywebview?.api.close_quick?.(csrf));
+let draftConfirmation=null;
+function confirmDraft(title,description,action){
+ if(draftConfirmation)return Promise.resolve(false);
+ const previousFocus=document.activeElement;
+ const wasReview=quickReview,wasFlowCapturing=quickFlowCapturing;
+ quickReview=true;quickFlowCapturing=false;updateQuickSurface();
+ $('draftConfirmTitle').textContent=title;$('draftConfirmDescription').textContent=description;$('draftConfirmAccept').textContent=action;
+ return new Promise(resolve=>{
+  draftConfirmation=accepted=>{
+   draftConfirmation=null;$('draftConfirm').close();
+   if(!accepted){quickReview=wasReview;quickFlowCapturing=wasFlowCapturing;updateQuickSurface();previousFocus?.focus();}
+   resolve(accepted);
+  };
+  $('draftConfirm').showModal();$('draftConfirmCancel').focus();
+ });
+}
+$('draftConfirmCancel').addEventListener('click',()=>draftConfirmation?.(false));
+$('draftConfirmAccept').addEventListener('click',()=>draftConfirmation?.(true));
+$('draftConfirm').addEventListener('cancel',e=>{e.preventDefault();draftConfirmation?.(false);});
+$('draftConfirm').addEventListener('close',()=>draftConfirmation?.(false));
+let quickCloseApproved=false,quickClosePending=false;
 window.relayQuickClose=()=>{
+ const approved=quickCloseApproved;quickCloseApproved=false;
  if(busy||inlinePendingId){notice('Wait for the current task to finish before closing this popup.');return false;}
- if(($('english').value.trim()||$('arabic').value.trim())&&!confirm('Close and discard this popup draft?'))return false;
+ if(!approved&&($('english').value.trim()||$('arabic').value.trim())){
+  if(!quickClosePending){quickClosePending=true;confirmDraft('Discard this draft?','This closes Quick capture and discards its unsent draft. Your main workspace stays unchanged.','Discard draft').then(accepted=>{
+   quickClosePending=false;if(accepted){quickCloseApproved=true;window.pywebview?.api.close_quick?.(csrf);}
+  });}
+  return false;
+ }
  clearTimeout(quickTimer);quickTimer=null;cancelInline();finishRecording(true);clearAudio();return true;
 };
 async function connectShortcut(){

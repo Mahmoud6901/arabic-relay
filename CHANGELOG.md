@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
+- Replace Quick capture's browser-style discard and replace confirmations with accessible dialogs that follow the app theme, without displaying a local address. Keep draft and Escape preserve the draft.
+- Make Flow dictation target a visible input and refresh the selected speech provider when reopening capture.
+- Start preparation immediately for completed Flow pastes and show validated Codex results without waiting for CLI shutdown.
+- Keep recording and editing available while destinations refresh. Load local Whisper during recording to reduce the wait after Stop.
+
 - Add a global Quick capture shortcut and separate desktop popup. Whisper/Cohere recordings prepare an English prompt automatically on Stop; Flow keeps its own microphone shortcut and its inserted text is prepared automatically.
 - Keep session selection and explicit Send in the popup, preserve the main workspace's draft, and offer alternative shortcuts in Settings when another app reserves the default combination.
 
@@ -13,6 +20,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 - Add an optional Inline translation preview inside the English prompt card. Translate Arabic phrases while preserving surrounding English and technical literals; review and send in one card.
 - Add source comparison, protected terms, audio replay, cancellation, recognition warnings, and explicit alternate recognition for short local recordings.
 - Keep existing installations in Craft a prompt. The personal mixed-speech benchmark and calibrated automatic recovery remain pending; this preview makes no accuracy claim.
+
+This release carries an Ed25519 update signature verified by existing Arabic Relay installations.
+It does not have a Windows Authenticode publisher certificate.
 
 ## [0.2.1] - 2026-10-30
 

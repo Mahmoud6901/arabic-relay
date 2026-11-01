@@ -44,20 +44,21 @@ context.window={location:{search:quickMode?'?quick=1':''},MediaRecorder:Recorder
 context.confirm=()=>true;
 for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+async function toggleCapture(){const pending=context.window.relayQuickToggle();if(nodes.get('draftConfirm').open)nodes.get('draftConfirmAccept').click();await pending;}
 (async()=>{
  await flush();
  if(quickMode){
   storage.set('relay-dictation-provider','wispr');
-  await context.window.relayQuickToggle();
+  await toggleCapture();
   assert.equal(nodes.get('flowCapture').focused,true);
   for(const provider of ['whisper','cohere']){
    storage.set('relay-dictation-provider',provider);
    vm.runInContext(`dictationProvider='${provider}';cohereConfigured=true;autoSpellingEnabled=true;update();`,context);
    const translations=requests.filter(r=>r.url==='/api/translate').length;
    const preloads=requests.filter(r=>r.url==='/api/speech/prepare').length;
-   await context.window.relayQuickToggle();assert.equal(vm.runInContext('listening',context),true);
+   await toggleCapture();assert.equal(vm.runInContext('listening',context),true);
    assert.equal(requests.filter(r=>r.url==='/api/speech/prepare').length,preloads+(provider==='whisper'?1:0));
-   await context.window.relayQuickToggle();await flush();await flush();
+   await toggleCapture();await flush();await flush();
    assert.equal(vm.runInContext('listening',context),false);
    assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);
    assert.equal(nodes.get('english').value,'The deadline is after the meeting. Keep React.');
@@ -66,11 +67,11 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   }
   const translations=requests.filter(r=>r.url==='/api/translate').length;
   // Cancel stops the microphone and never transcribes or prepares a prompt.
-  await context.window.relayQuickToggle();const uploads=requests.filter(r=>r.url==='/api/transcribe').length;
+  await toggleCapture();const uploads=requests.filter(r=>r.url==='/api/transcribe').length;
   await nodes.get('cancelRecording').click();await flush();
   assert.equal(requests.filter(r=>r.url==='/api/transcribe').length,uploads);
   assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations);
-  fail=true;await context.window.relayQuickToggle();await context.window.relayQuickToggle();await flush();
+  fail=true;await toggleCapture();await toggleCapture();await flush();
   assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations);
   assert.equal(nodes.get('voiceRetry').style.display,'flex');
   assert.equal(requests.filter(r=>r.url==='/api/send').length,0);

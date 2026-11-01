@@ -43,6 +43,8 @@ const {boot,flush}=require('./test_translation_ui.cjs');
  app.context.confirm=()=>false;
  n.get('english').listeners.input();
  assert.equal(app.context.window.relayQuickClose(),false);
+ assert.equal(n.get('draftConfirm').open,true);
+ n.get('draftConfirmCancel').click();await flush();
  // Record again follows the shortcut flow; Flow focuses without sending.
  await n.get('quickRecord').click();assert.equal(n.get('flowCapture').focused,true);
  assert.equal(app.posted('/api/send').length,1);
