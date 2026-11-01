@@ -130,6 +130,7 @@ html[data-mode=inline] #sourceCard,html[data-mode=inline] #voiceRetry{display:no
 #captureMark{display:flex;align-items:center;gap:3px;color:var(--blue);height:26px}
 #captureMark i{display:block;width:3px;height:12px;background:currentColor;border-radius:3px}
 #captureMark i:nth-child(2),#captureMark i:nth-child(4){height:22px}#captureMark i:nth-child(3){height:30px}
+#flowCapture{display:block;width:100%;height:28px;min-height:28px;padding:2px 0;border:0;border-radius:0;background:transparent;color:var(--ink);font:14px/24px Relay,RelayArabic,'Segoe UI',sans-serif;resize:none;overflow:hidden}#flowCapture[hidden]{display:none}
 #captureText{flex:1;min-width:0}#captureLabel{display:block;font-size:14px;line-height:1.4;color:var(--ink)}#captureHint{display:block;font-size:12px;line-height:1.5;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .capture-icon{border:1px solid var(--line-strong);border-radius:50%;width:40px;height:40px;padding:0;background:transparent;color:var(--ink);display:grid;place-items:center;font-family:inherit;font-size:20px;line-height:1;flex:none;cursor:pointer}
 .capture-icon:hover:not(:disabled){background:var(--tint)}
@@ -185,7 +186,7 @@ html[data-mode=inline] #sourceCard,html[data-mode=inline] #voiceRetry{display:no
 :root[data-quick=true] .content::-webkit-scrollbar-thumb,:root[data-quick=true] #projectList::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px}
 @media(max-width:420px){:root[data-quick=true] #quickRecipients{align-items:stretch;flex-direction:column;gap:8px}:root[data-quick=true] #toggleRecipients{justify-content:space-between}:root[data-quick=true] .destinations .chips{max-height:40px}:root[data-quick=true] #quickReviewHeader{gap:8px}}
 </style></head><body>
-<div id="captureBar"><span id="captureMark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div id="captureText" class="pywebview-drag-region"><strong id="captureLabel" role="status">Ready to dictate</strong><span id="captureHint">Ctrl + Alt + R</span></div><button id="captureStop" class="capture-icon" aria-label="Stop and prepare prompt" title="Stop and prepare prompt">■</button><button id="captureClose" class="capture-icon" aria-label="Cancel and close" title="Cancel and close">×</button></div>
+<div id="captureBar"><span id="captureMark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><div id="captureText" class="pywebview-drag-region"><strong id="captureLabel" role="status">Ready to dictate</strong><span id="captureHint">Ctrl + Alt + R</span><textarea id="flowCapture" rows="1" aria-label="Wispr Flow dictation" placeholder="Use your Flow shortcut here…" dir="auto" hidden></textarea></div><button id="captureStop" class="capture-icon" aria-label="Stop and prepare prompt" title="Stop and prepare prompt">■</button><button id="captureClose" class="capture-icon" aria-label="Cancel and close" title="Cancel and close">×</button></div>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0"><defs>
 <symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 3-.6 2.3-2 .9-2.1-.8-2 3.4 1.5 1.8v2.3l-1.5 1.8 2 3.4 2.1-.8 2 .9L10 21h4l.6-2.3 2-.9 2.1.8 2-3.4-1.5-1.8v-2.3l1.5-1.8-2-3.4-2.1.8-2-.9L14 3Z"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
@@ -275,7 +276,7 @@ let refreshing=false,pendingCatalog=null;
 let resolveStartup;const startupReady=new Promise(resolve=>{resolveStartup=resolve;});
 const quickCapture=window.location?.search==='?quick=1';
 document.documentElement.dataset.quick=String(quickCapture);
-let quickTimer=null,quickComposing=false,quickReview=false,quickFailure=false,quickNativeStage='';
+let quickTimer=null,quickComposing=false,quickReview=false,quickFailure=false,quickFlowCapturing=false,quickNativeStage='';
 if(quickCapture)document.documentElement.dataset.captureStage='capture';
 let dictationProvider='whisper',wisprFlowInstalled=false,cohereConfigured=false,selfLearningEnabled=null,autoSpellingEnabled=null;
 try{const saved=localStorage.getItem('relay-dictation-provider');if(['wispr','cohere'].includes(saved))dictationProvider=saved;}catch{}
@@ -658,15 +659,18 @@ window.relayQuickToggle=async()=>{
  if(!quickCapture)return;
  if(busy||inlinePendingId||quickTimer){notice('Preparing your prompt. Wait for it to finish before recording again.');return;}
  if(listening){finishRecording();return;}
+ // Re-read the main window's saved choice whenever an existing popup is reopened.
+ try{const saved=localStorage.getItem('relay-dictation-provider');dictationProvider=['wispr','cohere'].includes(saved)?saved:'whisper';}catch{}
  quickFailure=false;
  if(dictationProvider==='wispr'){
-  quickReview=!!$('english').value.trim();updateQuickSurface();
+  quickReview=false;quickFlowCapturing=true;
+  $('flowCapture').value=(inlineMode()?$('english'):$('arabic')).value;updateQuickSurface();
   if(!inlineMode()){document.documentElement.dataset.source='true';$('quickSource').textContent='Hide transcript';}
-  (inlineMode()?$('english'):$('arabic')).focus();
+  $('flowCapture').focus();
   notice('Use your Wispr Flow shortcut (normally Ctrl + Win) to dictate here. Relay automatically prepares the result. Review it and choose sessions before Send.',true);return;
  }
  if(($('english').value.trim()||$('arabic').value.trim())&&!confirm('Replace this popup draft with a new recording?'))return;
- quickReview=false;quickFailure=false;
+ quickReview=false;quickFailure=false;quickFlowCapturing=false;
  $('clearDraft').click();await $('record').click();
 };
 function updateQuickSurface(){
@@ -674,16 +678,31 @@ function updateQuickSurface(){
  const pending=busy||!!inlinePendingId||!!inlineTimer||!!quickTimer||quickComposing||inlineComposing;
  const hasPrompt=!!$('english').value.trim();
  if(!listening&&!pending&&(hasPrompt||quickFailure))quickReview=true;
+ if(quickFlowCapturing)quickReview=false;
  const stage=quickReview?'review':'capture';
  document.documentElement.dataset.captureStage=stage;
  document.documentElement.dataset.promptReady=String(hasPrompt&&(!inlineMode()||inlineSendable()));
  $('captureLabel').textContent=listening?'Listening…':pending?'Preparing your prompt…':dictationProvider==='wispr'?'Dictate with Wispr Flow':'Ready to dictate';
  $('captureHint').textContent=listening?'Press your shortcut to finish':pending?'Your words are being prepared':dictationProvider==='wispr'?'Use your Flow shortcut to speak':'Press your recording shortcut';
- $('captureStop').hidden=dictationProvider==='wispr';$('captureStop').disabled=!listening;
+ const flow=dictationProvider==='wispr';
+ $('flowCapture').hidden=!flow||stage!=='capture';$('flowCapture').disabled=busy||!!inlinePendingId;
+ $('captureText').classList.toggle('pywebview-drag-region',!flow);
+ $('captureHint').hidden=flow&&!pending;
+ $('captureStop').hidden=flow;$('captureStop').disabled=!listening;
  $('captureClose').disabled=pending;$('quickDismiss').disabled=pending||listening;$('quickRecord').disabled=pending||listening;
  $('quickRetry').hidden=inlineMode()||hasPrompt||!$('arabic').value.trim();$('quickRetry').disabled=pending||listening;
  if(window.pywebview?.api.quick_stage&&csrf&&quickNativeStage!==stage){quickNativeStage=stage;window.pywebview.api.quick_stage(stage,csrf).catch(()=>{quickNativeStage='';});}
 }
+// Flow inserts into this visible field, then the normal editor pipeline owns preparation.
+function receiveFlowText(){
+ if(!quickCapture||dictationProvider!=='wispr'||busy)return;
+ quickFlowCapturing=false;
+ const target=inlineMode()?$('english'):$('arabic');
+ target.value=$('flowCapture').value;target.dispatchEvent(new Event('input'));
+}
+$('flowCapture').addEventListener('input',receiveFlowText);
+$('flowCapture').addEventListener('compositionstart',()=>{(inlineMode()?$('english'):$('arabic')).dispatchEvent(new Event('compositionstart'));});
+$('flowCapture').addEventListener('compositionend',()=>{receiveFlowText();(inlineMode()?$('english'):$('arabic')).dispatchEvent(new Event('compositionend'));});
 $('quickRecord').addEventListener('click',()=>window.relayQuickToggle());
 $('captureStop').addEventListener('click',()=>finishRecording());
 $('quickRetry').addEventListener('click',()=>{quickFailure=false;$('translate').click();});

@@ -47,7 +47,11 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  await flush();
  if(quickMode){
+  storage.set('relay-dictation-provider','wispr');
+  await context.window.relayQuickToggle();
+  assert.equal(nodes.get('flowCapture').focused,true);
   for(const provider of ['whisper','cohere']){
+   storage.set('relay-dictation-provider',provider);
    vm.runInContext(`dictationProvider='${provider}';cohereConfigured=true;autoSpellingEnabled=true;update();`,context);
    const translations=requests.filter(r=>r.url==='/api/translate').length;
    const preloads=requests.filter(r=>r.url==='/api/speech/prepare').length;
@@ -57,6 +61,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
    assert.equal(vm.runInContext('listening',context),false);
    assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);
    assert.equal(nodes.get('english').value,'The deadline is after the meeting. Keep React.');
+   assert.equal(context.document.documentElement.dataset.captureStage,'review');
    assert.equal(requests.filter(r=>r.url==='/api/restore-english').length,0);
   }
   const translations=requests.filter(r=>r.url==='/api/translate').length;
