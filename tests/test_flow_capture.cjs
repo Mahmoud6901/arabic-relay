@@ -33,5 +33,17 @@ const {boot,flush}=require('./test_translation_ui.cjs');
  assert.equal(inline.nodes.get('english').value,'Improve MapView.');
  assert.equal(inline.context.document.documentElement.dataset.captureStage,'review');
  assert.equal(inline.posted('/api/send').length,0);
+ // Flow's complete paste should not incur the pause used for incremental typing.
+ const pasted=boot({quick:true,provider:'wispr',storedMode:'inline',inlineHandler:async(path,body)=>({
+  status:'ready',requestId:body.requestId,revision:body.revision,workingText:body.text,
+  outputText:'Review MapView.',issues:[],replacements:[]
+ })});
+ await flush();await pasted.context.window.relayQuickToggle();
+ pasted.nodes.get('flowCapture').value='راجع MapView.';
+ pasted.nodes.get('flowCapture').listeners.input({inputType:'insertFromPaste'});
+ await flush();
+ assert.equal(pasted.posted('/api/inline').length,1,'complete Flow paste waited for the typing timer');
+ assert.equal(pasted.context.document.documentElement.dataset.captureStage,'review');
+ assert.equal(pasted.posted('/api/send').length,0);
  console.log('Flow capture: current provider, focused input, automatic preparation and review passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

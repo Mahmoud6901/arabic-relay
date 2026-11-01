@@ -694,11 +694,16 @@ function updateQuickSurface(){
  if(window.pywebview?.api.quick_stage&&csrf&&quickNativeStage!==stage){quickNativeStage=stage;window.pywebview.api.quick_stage(stage,csrf).catch(()=>{quickNativeStage='';});}
 }
 // Flow inserts into this visible field, then the normal editor pipeline owns preparation.
-function receiveFlowText(){
+function receiveFlowText(event){
  if(!quickCapture||dictationProvider!=='wispr'||busy)return;
  quickFlowCapturing=false;
  const target=inlineMode()?$('english'):$('arabic');
  target.value=$('flowCapture').value;target.dispatchEvent(new Event('input'));
+ // Flow pastes a finished transcript; only incremental typing/composition needs the pause.
+ if(event?.inputType==='insertFromPaste'&&!quickComposing&&!inlineComposing){
+  if(inlineMode()&&inlineTimer){clearTimeout(inlineTimer);inlineTimer=null;prepareInline();}
+  else if(!inlineMode()&&quickTimer){clearTimeout(quickTimer);quickTimer=null;$('translate').click();}
+ }
 }
 $('flowCapture').addEventListener('input',receiveFlowText);
 $('flowCapture').addEventListener('compositionstart',()=>{(inlineMode()?$('english'):$('arabic')).dispatchEvent(new Event('compositionstart'));});

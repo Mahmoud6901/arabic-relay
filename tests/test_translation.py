@@ -26,6 +26,14 @@ class TranslationBoundary(unittest.TestCase):
         cache = patch.dict(translators.CACHE, {'codex': {'models': []}, 'claude': {'models': []}})  # never run codex for labels
         cache.start()
         self.addCleanup(cache.stop)
+        # These tests cover command construction and response parsing. The real pipe lifecycle
+        # and early-completion boundary use actual child processes in test_prompt_latency.py.
+        def collected(process, source, cancel_event=None, deadline=None):
+            out, err = process.communicate(source, timeout=90)
+            return out, err, False
+        collector = patch.object(translate, 'collect_codex', side_effect=collected)
+        collector.start()
+        self.addCleanup(collector.stop)
 
     def test_general_spelling_restore_keeps_arabic_and_existing_english(self):
         source = 'الديدلاين بعد الميتنج وخلي React وsrc/server.ts زي ما هم'

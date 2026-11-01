@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import threading
@@ -274,9 +275,13 @@ def process(body, provider=None):
         try:
             for attempt in range(2):
                 instructions = PROMPT + (' The previous response was invalid. Follow the exact JSON schema.' if attempt else '')
+                attempt_started = time.monotonic()
                 raw = provider(req) if provider else translate.codex_text(req, instructions, cancel_event=event,
                                                                          deadline=deadline, output_limit=32000)
                 output, replacements, issues = reconstruct(req, raw)
+                logging.info('Inline timing: attempt %d, %d ms, validation %s', attempt + 1,
+                             round((time.monotonic() - attempt_started) * 1000),
+                             issues[0]['code'] if issues else 'ready')
                 result.update(outputText=output if not issues else None, replacements=replacements, issues=issues,
                               status='needs_review' if issues else 'ready')
                 if not issues or issues[0]['code'] != 'invalid_response':

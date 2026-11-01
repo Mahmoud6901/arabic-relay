@@ -1,6 +1,8 @@
 """Arabic dictation to an English prompt through the user's own Codex CLI or Claude Code login."""
 import json
+import logging
 import os
+import queue
 import re
 import sqlite3
 import subprocess
@@ -105,6 +107,86 @@ def failure_kind(text, model=True):
     return next((kind for kind, pattern in FAILURES if (model or kind != 'model') and pattern.search(text or '')), 'other')
 
 
+def collect_codex(process, source, cancel_event=None, deadline=None):
+    """A terminal turn event is ready output; CLI housekeeping can finish in the background."""
+    started = time.monotonic()
+    deadline = deadline or time.monotonic() + 90
+    events, errors, output = queue.Queue(), [], []
+
+    def read_stdout():
+        try:
+            for line in process.stdout:
+                events.put(line)
+            process.wait()
+        finally:
+            events.put(None)
+
+    def read_stderr():
+        errors.append(process.stderr.read())
+
+    def write_source():
+        try:
+            process.stdin.write(source)
+            process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            process.stdin.close()
+
+    readers = [threading.Thread(target=fn, daemon=True) for fn in (read_stdout, read_stderr, write_source)]
+    for thread in readers:
+        thread.start()
+
+    def cleanup():
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        for thread in readers:
+            thread.join()
+        process.stdout.close()
+        process.stderr.close()
+
+    completed = False
+    failed = False
+    try:
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise ValueError('Text preparation cancelled.')
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ValueError(TIMEOUT)
+            try:
+                line = events.get(timeout=min(.05, remaining))
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            output.append(line)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            failed |= event.get('type') in ('error', 'turn.failed')
+            if event.get('type') == 'turn.completed' and not failed:
+                completed = True
+                break
+    except BaseException:
+        process.kill()
+        cleanup()
+        raise
+    if completed:
+        logging.info('Prompt timing: Codex completed turn %d ms; cleanup continues separately',
+                     round((time.monotonic() - started) * 1000))
+        threading.Thread(target=cleanup, daemon=True).start()
+    else:
+        cleanup()
+    return ''.join(output), ''.join(errors), completed
+
+
 def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, output_limit=16000):
     """One run of the chosen tool. Returns (draft, None) or (None, (its error events, its stderr))."""
     env = os.environ.copy()
@@ -116,8 +198,15 @@ def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, outpu
         process = subprocess.Popen(build_command(executable, choice, instructions), stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', cwd=paths.DATA,
                                    env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    completed = False
     try:
-        if cancel_event is None:
+        if cancel_event is not None and cancel_event.is_set():
+            process.kill()
+            process.communicate()
+            raise ValueError('Text preparation cancelled.')
+        if choice['tool'] == 'codex':
+            stdout, stderr, completed = collect_codex(process, prompt[1], cancel_event, deadline)
+        elif cancel_event is None:
             stdout, stderr = process.communicate(prompt[1], timeout=90)
         else:
             deadline = deadline or time.monotonic() + 90
@@ -137,7 +226,7 @@ def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, outpu
         process.communicate()
         raise ValueError(TIMEOUT) from None
     drafts, messages = [], []
-    failed = bool(process.returncode)
+    failed = not completed and bool(process.returncode)
     if choice['tool'] == 'claude':
         try:
             reply = json.loads(stdout)
