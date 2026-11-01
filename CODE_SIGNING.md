@@ -2,8 +2,8 @@
 
 ## Current status
 
-Arabic Relay is preparing an application to SignPath Foundation. Acceptance and Windows Authenticode signing
-are not yet enabled. Releases through v0.3.0 carry the project's Ed25519 update signature, which Relay verifies;
+Arabic Relay's application to SignPath Foundation was submitted on 1 November 2026. Approval is pending.
+Windows Authenticode signing is not yet enabled. Releases through v0.3.0 carry the project's Ed25519 update signature, which Relay verifies;
 this is separate from a Windows publisher certificate.
 
 If the application is approved, the intended attribution is:

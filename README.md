@@ -34,8 +34,8 @@ existing Codex or Claude Code sessions, or your clipboard.
 3. On first launch, Arabic Relay checks your computer and downloads the speech model (1.6–3.1 GB, once).
 
 **Windows publisher signing.** Releases through v0.3.0 do not yet have a Windows Authenticode publisher signature,
-so Windows may display an unknown-publisher or SmartScreen warning. The SignPath Foundation application is being
-prepared; approval is pending. See the [Code signing policy](CODE_SIGNING.md).
+so Windows may display an unknown-publisher or SmartScreen warning. The SignPath Foundation application was
+submitted on 1 November 2026; approval is pending. See the [Code signing policy](CODE_SIGNING.md).
 To check that your download is the published one, compare its checksum with
 `SHA256SUMS.txt` on the release page:
 
