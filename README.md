@@ -33,12 +33,14 @@ existing Codex or Claude Code sessions, or your clipboard.
 2. Run it. No admin rights are needed; it installs for your Windows user only.
 3. On first launch, Arabic Relay checks your computer and downloads the speech model (1.6–3.1 GB, once).
 
-**Windows SmartScreen.** Version 0.1 is not code-signed yet, so Windows may say it "protected your PC". Click
-**More info → Run anyway**. To check that your download is the published one, compare its checksum with
+**Windows publisher signing.** Releases through v0.3.0 do not yet have a Windows Authenticode publisher signature,
+so Windows may display an unknown-publisher or SmartScreen warning. The SignPath Foundation application is being
+prepared; approval is pending. See the [Code signing policy](CODE_SIGNING.md).
+To check that your download is the published one, compare its checksum with
 `SHA256SUMS.txt` on the release page:
 
 ```powershell
-Get-FileHash .\ArabicRelay-Setup-0.2.1.exe -Algorithm SHA256
+Get-FileHash .\ArabicRelay-Setup-0.3.0.exe -Algorithm SHA256
 ```
 
 Updates install automatically and are verified with the project's signing key before they run. You can switch to

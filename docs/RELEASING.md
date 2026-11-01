@@ -37,5 +37,9 @@ into the app, uploads `<installer>.sig` and publishes the release. Installed app
 
 ## Code signing
 
-v0.1 ships unsigned. Once SignPath Foundation approves the project, Authenticode signing becomes one more workflow
-step, and updates also require the same publisher as the running app.
+Releases through v0.3.0 have Ed25519 update signatures but no Windows Authenticode publisher signature.
+The SignPath Foundation application is being prepared. See the [Code signing policy](../CODE_SIGNING.md).
+Do not describe Foundation signing as active until approval, artifact review, and workflow integration are complete.
+The application executable needs product/version metadata, and the bundled NVIDIA cuDNN and Microsoft WebView2
+bootstrapper need an eligibility decision. After activation, Authenticode-sign and timestamp the application and
+installer before producing SHA256SUMS.txt and the Ed25519 update signature.

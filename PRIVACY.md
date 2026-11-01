@@ -52,6 +52,16 @@ prevent duplicate submissions remains until you delete the app's data folder.
 
 No telemetry, analytics or crash reporting.
 
+## Third-party privacy policies
+
+Online features use your chosen provider and account settings. Their handling of data is described in the
+[OpenAI privacy policy](https://openai.com/policies/privacy-policy/),
+[Anthropic privacy policy](https://www.anthropic.com/legal/privacy),
+[Cohere privacy policy](https://cohere.com/privacy), and
+[Wispr Flow privacy policy](https://wisprflow.ai/privacy-policy).
+Choosing local Whisper keeps transcription audio on this computer; prompt preparation may still use your
+selected online Codex or Claude Code provider as described above.
+
 ## Copy diagnostics
 
 **Settings → About → Copy diagnostics** puts a short report on your clipboard for a GitHub issue. It contains the app,
