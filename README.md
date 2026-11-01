@@ -1,30 +1,44 @@
 # Arabic Relay
 
-### Quick capture from another app
+**Speak Arabic and English. Review a clear English prompt. Send it to your coding session.**
 
-Keep Relay running (it can be minimized), then press **Ctrl + Alt + Space**.
-With Whisper or Cohere selected, this opens a small floating recording bar and starts recording.
-Press the shortcut again, or the square Stop button, to prepare an English prompt automatically.
-The bar expands into a focused, editable prompt window when preparation finishes.
-Review/edit the prompt, choose one or more sessions with **Choose recipients**, and click **Send**.
-Your main workspace's draft stays unchanged. Recording and preparation never send to a session automatically.
+[Download for Windows](https://github.com/Mahmoud6901/arabic-relay/releases/latest) ·
+[العربية](README.ar.md) · [First-use feedback](https://github.com/Mahmoud6901/arabic-relay/issues/new?template=first_use_feedback.yml)
 
-With **Wispr Flow** selected, Relay's shortcut opens and focuses the popup; use **Flow's own shortcut** to record.
-Flow must insert into this focused popup. Relay prepares the inserted text after it settles; it does not intercept
-Flow's shortcut or control its microphone. The popup uses the main workspace's selected writing mode
-(Craft a prompt or Inline translation), without repeating its settings or transcript cards.
+Arabic Relay is a free, MIT-licensed Windows desktop app for developers who think and speak in Arabic while
+working with English coding tools. Dictate or type your notes, review the result, and send it to one or more
+**T3 Code, Codex, or Claude Code sessions**. You can also copy the prompt into another tool.
 
-**Settings → Quick capture** offers Ctrl + Alt + Space, Ctrl + Alt + R, and Ctrl + Shift + Space.
-If another app reserves a combination, Relay displays the conflict and the **Quick capture** button still works.
-The shortcut is released when Relay exits; it does not run while Relay is closed. Popup drafts are temporary:
-closing an unsent draft asks before discarding it. Cancel recording discards the current audio.
+**Speak → prepare → review/edit → choose sessions → Send.** Recording and preparation never send to a session automatically.
 
-Dictate in Arabic, mixed with the English terms you already use, and get a clean English prompt for your AI coding
-tools. Arabic Relay transcribes your voice on your own computer with Whisper, turns the transcript into an English
-prompt with Codex CLI or Claude Code (your own sign-in), and sends it only when you click Send: to T3 Code sessions, a
-existing Codex or Claude Code sessions, or your clipboard.
+![Quick capture review with an editable English prompt, Choose recipients, and Send controls](assets/imgs/quick-capture-review.png)
 
-![Arabic Relay: an Arabic and English transcript next to the English prompt prepared from it](docs/screenshot.png)
+*Current Quick capture review interface, shown with a typed example. No destination is selected and nothing was sent.*
+
+## Which mode should I choose?
+
+| Mode | What happens | Best for |
+|---|---|---|
+| **Craft a prompt** | Turns Arabic/English notes into organized English instructions, preserving your intent and constraints. | Speaking through a task or idea. |
+| **Inline translation** *(preview)* | Translates Arabic phrases while preserving the existing English text outside those phrases. | Keeping your wording and translating only the Arabic parts. |
+
+Both modes let you edit first and send the exact text shown. Recognition and translation can make mistakes;
+review names, technical terms, and instructions before sending.
+
+For example, you might say: «راجع صفحة الـ login وحسّن الـ error messages من غير ما تغيّر الـ authentication flow.»
+A possible English result is: “Review the login page and improve the error messages without changing the authentication flow.”
+This is an illustrative example, not an accuracy guarantee.
+
+## Try it in four steps
+
+1. **Install** the Windows app from [GitHub Releases](https://github.com/Mahmoud6901/arabic-relay/releases/latest).
+2. **Choose your tools.** Use local Whisper or an optional speech provider. Install and sign in to Codex CLI or Claude Code for prompt preparation.
+3. **Speak or type.** Choose Craft a prompt or Inline translation, then review and edit the English result.
+4. **Choose a destination.** Connect T3 or local coding sessions in Settings, select recipients, and click Send. You can try preparation and Copy prompt before connecting a destination.
+
+**Before downloading:** Windows 10/11 x64; local speech models need a one-time download and disk space.
+AI prompt preparation uses your own Codex/Claude Code login and its usage limits. Relay is not a fully offline AI writer.
+Regular ChatGPT and Claude conversations are not selectable destinations; existing local coding sessions are supported.
 
 ## Install
 
@@ -51,7 +65,7 @@ Updates install automatically and are verified with the project's signing key be
 - Windows 10 or 11, 64-bit. Microsoft Edge WebView2 (the installer adds it if it is missing).
 - About 2–4 GB of free disk space for the speech model.
 - An NVIDIA GPU is optional. With one, speech runs on the GPU (Arabic Relay downloads NVIDIA's cuBLAS library, 553 MB,
-  once). Without one, it runs on the CPU and takes a few seconds per sentence.
+  once). Without one, it runs on the CPU. Speed depends on your hardware, speech model, and recording length.
 - [Codex CLI](https://developers.openai.com/codex/cli) or [Claude Code](https://code.claude.com/docs/en/overview),
   signed in, to prepare English prompts. Without either, you can still dictate and type English yourself.
 - Optional: [Wispr Flow](https://wisprflow.ai) or a Cohere API key as other ways to dictate. Not affiliated.
@@ -79,11 +93,37 @@ do not become instructions to implement them. It does not add invented requireme
 The finished prompt appears in the editor. You can edit it or click **Send** directly to deliver it to your
 selected sessions. Preparation itself does not send anything to those sessions.
 
-## Privacy
+## Quick capture from another app
 
-Your voice is transcribed on your computer. The transcript goes to OpenAI or Anthropic only when you prepare an
-English prompt, through your own Codex or Claude Code sign-in. There is no telemetry. Read [PRIVACY.md](PRIVACY.md)
-for every connection the app makes and what Copy diagnostics contains.
+Keep Relay running (it can be minimized), then press **Ctrl + Alt + Space**.
+With Whisper or Cohere selected, this opens a small floating recording bar and starts recording.
+Press the shortcut again, or the square Stop button, to prepare an English prompt automatically.
+The bar expands into a focused, editable prompt window when preparation finishes.
+Review/edit the prompt, choose one or more sessions with **Choose recipients**, and click **Send**.
+Your main workspace's draft stays unchanged. Recording and preparation never send to a session automatically.
+
+With **Wispr Flow** selected, Relay's shortcut opens and focuses the popup; use **Flow's own shortcut** to record.
+Flow must insert into this focused popup. Relay prepares the inserted text after it settles; it does not intercept
+Flow's shortcut or control its microphone. The popup uses the main workspace's selected writing mode
+(Craft a prompt or Inline translation), without repeating its settings or transcript cards.
+
+**Settings → Quick capture** offers Ctrl + Alt + Space, Ctrl + Alt + R, and Ctrl + Shift + Space.
+If another app reserves a combination, Relay displays the conflict and the **Quick capture** button still works.
+The shortcut is released when Relay exits; it does not run while Relay is closed. Popup drafts are temporary:
+closing an unsent draft asks before discarding it. Cancel recording discards the current audio.
+
+## What stays local, and what goes online?
+
+| Feature | Where processing happens |
+|---|---|
+| Local Whisper dictation | Audio is transcribed on your computer. |
+| Cohere or Wispr Flow | Optional online speech processing by your selected provider. |
+| Craft a prompt, English spelling improvement, inline translation | Text goes to your chosen Codex or Claude Code provider through your account. Enabled automatic features and Quick capture can do this before you review. |
+| Delivery | Your explicit Send click delivers to selected sessions; their coding agents use their own provider and permissions. |
+| History and settings | Stored on your computer. No telemetry or automatic crash reporting. |
+
+Read [PRIVACY.md](PRIVACY.md) for the complete connection list and controls.
+
 
 ## Direct Codex and Claude Code sessions
 
@@ -146,6 +186,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `pip install -e .[build]`, ins
 Open **Settings → About → Copy diagnostics** and paste the result into a
 [bug report](https://github.com/Mahmoud6901/arabic-relay/issues/new?template=bug_report.yml). It contains versions and
 paths, never your transcripts or audio.
+
+## Help shape Relay
+
+Try one real task and [tell us how it went](https://github.com/Mahmoud6901/arabic-relay/issues/new?template=first_use_feedback.yml):
+was installation clear, were technical words recognized correctly, and could you reach the intended session?
+Please leave private prompts, audio, tokens, and session titles out of public reports.
+
+If Arabic Relay helps your workflow, consider starring the repository. It helps others find the project.
+To contribute code, documentation, or Arabic wording improvements, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

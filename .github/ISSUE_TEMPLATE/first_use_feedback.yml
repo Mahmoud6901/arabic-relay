@@ -1,0 +1,64 @@
+name: First-use feedback / تجربتك الأولى
+description: Tell us how one real task went. Arabic and English are welcome.
+title: "[First use] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Arabic Relay. This report is public: do not include private prompts, recordings, session titles, account details, or API keys.
+        تقدر تكتب بالعربي أو الإنجليزي. التقرير عام؛ بلاش بيانات خاصة أو تسجيلات أو مفاتيح وصول.
+  - type: input
+    id: version
+    attributes:
+      label: Relay version / إصدار التطبيق
+      description: Find it in Settings → About.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How far did you get? / وصلت لفين؟
+      options:
+        - Installed, but setup stopped me
+        - Prepared and reviewed a prompt
+        - Copied a prompt to another tool
+        - Sent a prompt to the intended coding session
+        - Could not install
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Writing mode / وضع الكتابة
+      options:
+        - Craft a prompt
+        - Inline translation
+        - Tried both
+        - Did not reach this step
+  - type: dropdown
+    id: speech
+    attributes:
+      label: Input method / طريقة الإدخال
+      options:
+        - Local Whisper
+        - Cohere
+        - Wispr Flow
+        - Typed or pasted text
+        - Did not reach this step
+  - type: textarea
+    id: experience
+    attributes:
+      label: What worked, and where did you get stuck? / إيه اللي اشتغل وإيه اللي عطّلك؟
+      description: Describe the task generally. Include approximate waits if speed was a problem. Synthetic examples are welcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: return
+    attributes:
+      label: Would you use it for another task? / هتستخدمه في مهمة تانية؟
+      options:
+        - Yes
+        - Maybe, after a fix
+        - No
+        - I have already used it again
