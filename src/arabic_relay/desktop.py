@@ -35,10 +35,19 @@ class QuickCapture:
             if self.window is None:
                 self.ready = False
                 self.allow_close = False
+                screens = webview.screens
+                screen = next((s for s in screens if s.x == 0 and s.y == 0), screens[0])
+                # WinForms reports physical bounds; create_window takes DPI-scaled units.
+                scale = ctypes.windll.user32.GetDpiForSystem() / 96
+                screen_width, screen_height = int(screen.width / scale), int(screen.height / scale)
+                width, height = min(700, screen_width - 80), min(840, screen_height - 100)
                 self.window = webview.create_window(
                     'Arabic Relay — Quick capture', server.ORIGIN + '/?quick=1',
-                    js_api=DesktopApi(self, quick=True), width=700, height=840,
-                    min_size=(540, 620), on_top=True, background_color='#000000', text_select=True)
+                    js_api=DesktopApi(self, quick=True), width=width, height=height,
+                    x=int(screen.x / scale) + (screen_width - width) // 2,
+                    y=int(screen.y / scale) + 30,
+                    min_size=(min(540, width), min(620, height)),
+                    on_top=True, background_color='#000000', text_select=True)
                 self.window.events.closing += self.closing
                 self.window.events.closed += self.closed
             elif self.ready:

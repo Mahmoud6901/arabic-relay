@@ -29,10 +29,18 @@ class Shortcut(unittest.TestCase):
     def test_popup_waits_for_page_ready_and_reuses_one_editor(self):
         capture = desktop.QuickCapture()
         window = MagicMock()
-        with patch.object(desktop.webview, 'create_window', return_value=window) as create:
+        with patch.object(desktop, 'webview') as view, patch.object(desktop.ctypes, 'windll') as dll:
+            dll.user32.GetDpiForSystem.return_value = 144
+            view.screens = [MagicMock(width=1920, height=1080, x=-1920, y=0),
+                            MagicMock(width=1200, height=900, x=0, y=0)]
+            create = view.create_window
+            create.return_value = window
             capture.toggle()
             capture.toggle()  # second press during initial loading does not duplicate
             create.assert_called_once()
+            self.assertEqual(create.call_args.kwargs['height'], 500)
+            self.assertEqual(create.call_args.kwargs['min_size'], (540, 500))
+            self.assertEqual(create.call_args.kwargs['y'], 30)
             window.evaluate_js.assert_not_called()
             capture.loaded()
             capture.loaded()  # bridge + initial refresh may both report ready
