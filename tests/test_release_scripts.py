@@ -1,4 +1,4 @@
-"""scripts/sign_release.py and scripts/release_notes.py. Never calls the real gh; never touches the real key."""
+"""Release signing. Never calls the real gh; never touches the real key."""
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -18,7 +18,6 @@ def load(name):
 
 
 sign_release = load('sign_release')
-release_notes = load('release_notes')
 
 
 class Signing(unittest.TestCase):
@@ -69,16 +68,6 @@ class Signing(unittest.TestCase):
         self.assertTrue(calls[1][4].endswith('ArabicRelay-Setup-0.2.0.exe.sig'))
         self.assertIn('--clobber', calls[1])
         self.assertEqual(calls[2][3:], ['v0.2.0', '--draft=false'])
-
-
-class Notes(unittest.TestCase):
-    CHANGELOG = '# Changelog\n\n## [0.2.0] - 2026-11-01\n\n- Faster.\n\n## [0.1.0] - 2026-10-21\n\n- First release.\n'
-
-    def test_release_notes_section(self):
-        self.assertEqual(release_notes.section(self.CHANGELOG, '0.2.0'), '- Faster.')
-        self.assertEqual(release_notes.section(self.CHANGELOG, '0.1.0'), '- First release.')
-        with self.assertRaises(ValueError):
-            release_notes.section(self.CHANGELOG, '0.3.0')
 
 
 if __name__ == '__main__':

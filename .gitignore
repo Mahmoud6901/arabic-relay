@@ -29,3 +29,10 @@ graphify-out/
 .venv/
 *.egg-info/
 .superpowers/
+
+# Local planning and documentation stay off GitHub
+*.md
+/docs/
+/assets/imgs/
+/scripts/release_notes.py
+/tests/test_docs.py

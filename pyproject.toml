@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "arabic-relay"
 dynamic = ["version"]
 description = "Dictate in Arabic, send a clean English prompt to your AI coding tools."
-readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"

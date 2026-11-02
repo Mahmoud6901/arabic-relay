@@ -45,7 +45,7 @@ class RealWorker(unittest.TestCase):
 
 
     def test_real_worker_transcribes_arabic_on_cpu(self):
-        # Google FLEURS ar_eg test row 1778 (CC-BY-4.0), see tests/fixtures/README.md.
+        # Google FLEURS ar_eg test row 1778 (CC-BY-4.0), see tests/fixtures/NOTICES.txt.
         clip = Path(__file__).parent / 'fixtures' / 'arabic_fleurs.wav'
         with patch.object(speech, 'speech_device', return_value='cpu'):
             result = speech.run_worker(tiny_model(), clip.read_bytes(), [])

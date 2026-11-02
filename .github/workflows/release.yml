@@ -52,18 +52,16 @@ jobs:
           }
       - name: Build, self-test, installer smoke test
         run: ./scripts/build.ps1 -Smoke
-      - name: Checksums and notes
+      - name: Checksums
         run: |
           $version = "$env:GITHUB_REF_NAME".Substring(1)
           $name = "ArabicRelay-Setup-$version.exe"
           "$((Get-FileHash "dist\$name" -Algorithm SHA256).Hash.ToLower())  $name" | Set-Content dist\SHA256SUMS.txt -Encoding ascii
-          python scripts/release_notes.py $version | Set-Content notes.md -Encoding utf8
-          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" --draft --title "Arabic Relay $version" --notes-file notes.md \
+          gh release create "$GITHUB_REF_NAME" --draft --title "Arabic Relay $version" --generate-notes \
             "dist/ArabicRelay-Setup-$version.exe" dist/SHA256SUMS.txt
