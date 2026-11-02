@@ -199,13 +199,11 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  await nodes.get('forgetVocabulary').click();await flush();
  assert.equal(nodes.get('vocabularyStatus').textContent,'Personal vocabulary: 0 words · 0 corrections');
  assert.equal(nodes.get('arabic').value,before);
- // One Send action becomes available when a live destination and prompt are ready.
- vm.runInContext("connected=true;live=true;selected.set('test-thread',{id:'test-thread',projectId:'project',project:'Project',title:'Session'});update();",context);
+ // Paste needs a native capture target; the normal workspace offers Copy prompt.
  assert.ok(!nodes.has('approve'));
- assert.equal(nodes.get('send').disabled,false);
- vm.runInContext("live=false;update();",context);
- assert.equal(nodes.get('send').disabled,true); // A saved sign-in is not live T3 access.
- vm.runInContext("live=true;busy=true;update();",context);
+ assert.ok(!nodes.has('sidebar'));
+ assert.equal(nodes.get('send').disabled,true);
+ vm.runInContext("busy=true;update();",context);
  assert.equal(nodes.get('dictationProvider').disabled,true);
  assert.equal(nodes.get('autoSpelling').disabled,true);
  nodes.get('dictationProvider').value='wispr';nodes.get('dictationProvider').listeners.change();
@@ -217,10 +215,9 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  assert.equal(nodes.get('english').value,'');
  assert.equal(nodes.get('originalSpeechText').textContent,'');
  assert.equal(nodes.get('originalSpeech').style.display,'none');
- assert.equal(nodes.get('selectedCount').textContent,1);
  assert.equal(nodes.get('vocabulary').value,vocabularyBefore);
  assert.equal(nodes.get('send').disabled,true);
- assert.ok(nodes.get('send').title.includes('English prompt'));
+ assert.ok(nodes.get('send').title.includes('shortcut'));
  assert.ok(!requests.some(r=>r.url.includes('approval')||r.url==='/api/approve'));
  await nodes.get('record').click();await nodes.get('record').click();await flush();
  assert.equal(nodes.get('arabic').value,'ضيف dark mode في React');
@@ -253,25 +250,10 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  await nodes.get('record').click();await nodes.get('record').click();await flush();await flush();
  assert.ok(nodes.get('notice').textContent.includes(transcribeNotice),nodes.get('notice').textContent);transcribeNotice=null;
  assert.ok(!requests.some(r=>r.url==='/api/send'));
- vm.runInContext("connected=false;selected.clear();selected.set('desktop-target',{id:'desktop-target',projectId:'desktop:claude',project:'Claude Desktop',title:'New chat'});$('english').value='Reviewed prompt.';update();",context);
- assert.equal(nodes.get('send').disabled,false); // Desktop destinations are independent of T3 sign-in.
- await nodes.get('send').click();
- const attempt=requests.filter(r=>r.url==='/api/send');
- assert.equal(attempt.length,1);
- const sentBody=JSON.parse(attempt[0].options.body);
- assert.equal(sentBody.english,'Reviewed prompt.');
- assert.equal(sentBody.targets[0].projectId,'desktop:claude');
- assert.ok(sentBody.requestId);
- assert.equal(nodes.get('send').disabled,true);
- await nodes.get('send').click();assert.equal(requests.filter(r=>r.url==='/api/send').length,1);
+ assert.equal(nodes.has('sidebar'),false);
+ assert.equal(nodes.get('send').hidden,true);
  assert.equal(nodes.get('english').disabled,false);
- nodes.get('english').value='New prompt';nodes.get('english').listeners.input();
- assert.equal(nodes.get('send').disabled,false);
  assert.ok([...html.matchAll(/<svg\b[^>]*>/g)].every(m=>m[0].includes('aria-hidden="true"')));
- const submitted=vm.runInContext("deliveryMarkup({projectId:'desktop:claude',threadId:'opaque',title:'Claude / New chat',state:'submitted',receipt:{}})",context);
- assert.ok(submitted.includes('Submitted'));
- assert.ok(!submitted.includes('T3 confirmed'));
- assert.ok(!submitted.includes('t3-thread://'));
  // Both built-in recording providers lead straight to the inline English preview after Stop.
  await nodes.get('clearDraft').click();await nodes.get('inlineMode').click();
  const oldSends=requests.filter(r=>r.url==='/api/send').length;

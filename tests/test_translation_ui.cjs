@@ -37,7 +37,7 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
    else if(url==='/api/send')data={deliveries:[]};
    else data={};
    return {ok,json:async()=>data};}});
- context.window={location:{search:quick?'?quick=1':''},MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null,quick_ready:async()=>{},shortcut_status:async()=>({available:true})}}};
+ context.window={location:{search:quick?'?quick=1':''},MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null,quick_ready:async()=>{},begin_capture:async()=>({captureId:'capture-test',available:false}),paste_to_target:async(body)=>{requests.push({url:'native:paste',body});return {status:'paste_requested',message:'Paste requested'};},finish_paste:async()=>{},shortcut_status:async()=>({available:true})}}};
  for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
  return {nodes,requests,context,posted:url=>requests.filter(r=>r.url===url),choice:()=>choice};
 }

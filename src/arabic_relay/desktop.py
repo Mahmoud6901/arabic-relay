@@ -7,6 +7,8 @@ import sys
 import threading
 import traceback
 import urllib.parse
+import secrets
+import sqlite3
 import webbrowser
 
 os.environ.setdefault('ARABIC_RELAY_PORT', '8791')  # sandbox and dev runs pick another
@@ -14,7 +16,7 @@ os.environ['ARABIC_RELAY_NATIVE'] = '1'
 
 import webview
 
-from . import diagnostics, server, locate, paths, speech, store, t3, updates
+from . import diagnostics, server, locate, paths, speech, store, t3, updates, paste, history, inline
 from .hotkey import RecordingHotkey
 
 
@@ -27,12 +29,20 @@ class QuickCapture:
         self.allow_close = False
         self.stage = 'capture'
         self.lock = threading.Lock()
+        self.paster = paste.Paster()
+        self.target = None
+        self.next_target = None
+        self.capture_id = None
+        self.paste_attempted = False
         self.hotkey = RecordingHotkey(self.toggle, choice)
 
     def toggle(self):
         if self.exiting or not self.lock.acquire(blocking=False):
             return
         try:
+            candidate = self.paster.capture()
+            if candidate is not None:
+                self.next_target = candidate
             if self.window is None:
                 self.ready = False
                 self.allow_close = False
@@ -99,6 +109,8 @@ class QuickCapture:
     def closed(self):
         self.window = None
         self.ready = False
+        self.target = self.next_target = None
+        self.capture_id = None
 
     def stop(self):
         self.exiting = True
@@ -111,6 +123,48 @@ class DesktopApi:
     def __init__(self, capture=None, quick=False):
         self._capture = capture
         self._quick = quick
+
+    def begin_capture(self, token):
+        if token != server.CSRF or not self._quick or not self._capture:
+            raise ValueError('Invalid recording request.')
+        capture = self._capture
+        with capture.lock:
+            capture.target = capture.next_target or capture.target
+            capture.next_target = None
+            capture.capture_id = secrets.token_urlsafe(24)
+            capture.paste_attempted = False
+            return {'captureId': capture.capture_id, 'available': capture.target is not None,
+                    'app': capture.target.name if capture.target else None}
+
+    def paste_to_target(self, body, token):
+        if token != server.CSRF or not self._quick or not self._capture or not isinstance(body, dict):
+            raise ValueError('Invalid paste request.')
+        capture = self._capture
+        with capture.lock:
+            if not capture.capture_id or body.get('captureId') != capture.capture_id or capture.paste_attempted:
+                raise ValueError('This recording already attempted paste or expired. Check the target before copying again.')
+            if body.get('mode') == 'inline':
+                inline.verify_send(body)
+            target = capture.target
+            def attempted():
+                capture.paste_attempted = True
+            result = capture.paster.paste(target, body.get('english'), attempted)
+            try:
+                with store.database() as db:
+                    history.initialize(db)
+                    history.record(db, capture.capture_id, {'english': body['english'],
+                                   'targets': [{'title': target.name + ' · paste requested'}]})
+            except sqlite3.Error:
+                result['message'] += ' History could not be saved; do not paste again just to save history.'
+            return result
+
+    def finish_paste(self, capture_id, token):
+        if token != server.CSRF or not self._quick or not self._capture:
+            raise ValueError('Invalid paste request.')
+        capture = self._capture
+        if capture_id == capture.capture_id and capture.paste_attempted and capture.window:
+            capture.allow_close = True
+            capture.window.destroy()
 
     def shortcut_status(self, token):
         if token != server.CSRF or not self._capture:
@@ -149,18 +203,7 @@ class DesktopApi:
         self._capture.request_close()
 
     def open_sign_in(self, url, token):
-        if token != server.CSRF or not isinstance(url, str) or len(url) > 5000:
-            raise ValueError('Invalid sign-in request.')
-        parsed = urllib.parse.urlparse(url)
-        query = urllib.parse.parse_qs(parsed.query)
-        if parsed.scheme != 'http' or parsed.netloc != '127.0.0.1:3773' or parsed.path != '/oauth/mcp/authorize':
-            raise ValueError('Sign-in must use the local T3 service.')
-        with store.AUTH_LOCK:
-            pending = t3.OAUTH.get(query.get('state', [''])[0])
-            if not pending or query.get('client_id', [''])[0] != pending['client_id']:
-                raise ValueError('This sign-in request is no longer active.')
-        with locate.external_runtime():
-            return webbrowser.open(url)
+        raise ValueError('Session connections have been removed. Start dictation from the app where you want to paste.')
 
 
     def quit(self, token):

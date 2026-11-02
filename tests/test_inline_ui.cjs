@@ -31,17 +31,17 @@ const ready=(body,text)=>({status:'ready',requestId:body.requestId,revision:body
  await flush();assert.equal(app.context.document.documentElement.dataset.mode,'inline');
  await edit(app.nodes.get('english'),'  راجع MapView.\r\n');await app.nodes.get('translate').click();
  assert.equal(app.nodes.get('english').value,'  Check MapView.\r\n');
- vm.runInContext("selected.set('t',{id:'t',projectId:'desktop:test',project:'Test',title:'Test'});update();",app.context);
+ vm.runInContext("captureId='capture-test';update();",app.context);
  await app.nodes.get('send').click();
- const sent=app.posted('/api/send');assert.equal(sent.length,1);
+ const sent=app.posted('native:paste');assert.equal(sent.length,1);
  assert.equal(sent[0].body.english,'  Check MapView.\r\n');assert.equal(sent[0].body.mode,'inline');
- await app.nodes.get('send').click();assert.equal(app.posted('/api/send').length,1);
+ await app.nodes.get('send').click();assert.equal(app.posted('native:paste').length,1);
  // A reviewed source edit needs translation again; a failed/partial model result never sends.
  app=boot({storedMode:'inline',inlineHandler:async()=>({status:'needs_review',issues:[{message:'Ambiguous phrase'}]})});
  await flush();await edit(app.nodes.get('inlineSource'),'It is جامد.');
  assert.equal(app.nodes.get('send').disabled,true);
- vm.runInContext("selected.set('t',{id:'t',projectId:'desktop:test'});update();",app.context);
- await app.nodes.get('send').click();assert.equal(app.posted('/api/send').length,0);
+ vm.runInContext("captureId='capture-test';update();",app.context);
+ await app.nodes.get('send').click();assert.equal(app.posted('native:paste').length,0);
  // An ASR warning is acknowledged only for the current revision.
  await edit(app.nodes.get('english'),'It is solid.');
  vm.runInContext('inlineAsrWarning=true;update();',app.context);
@@ -60,7 +60,7 @@ const ready=(body,text)=>({status:'ready',requestId:body.requestId,revision:body
  assert.equal(app.posted('/api/inline').at(-1).body.text,'أراجع الكود');
  assert.ok(app.nodes.get('inlineProvenance').textContent.includes('arrange the code'));
  assert.equal(vm.runInContext('inlineOriginalText',app.context),'arrange the code');
- assert.equal(app.posted('/api/send').length,0);
+ assert.equal(app.posted('native:paste').length,0);
  // Wispr/paste insertion automatically settles into a reviewable result, with no Translate click.
  app=boot({storedMode:'inline',inlineHandler:async(path,body)=>ready(body,'Please review MapView.')});await flush();
  assert.equal(app.nodes.get('translate').hidden,true);
@@ -70,7 +70,7 @@ const ready=(body,text)=>({status:'ready',requestId:body.requestId,revision:body
  await new Promise(r=>setTimeout(r,1300));await flush();
  assert.equal(app.posted('/api/inline').length,1);
  assert.equal(app.nodes.get('english').value,'Please review MapView.');
- assert.equal(app.posted('/api/send').length,0);
+ assert.equal(app.posted('native:paste').length,0);
  // IME composition never submits partial words, and changing modes cancels queued work.
  await app.nodes.get('english').listeners.compositionstart();
  await edit(app.nodes.get('english'),'Please راج');

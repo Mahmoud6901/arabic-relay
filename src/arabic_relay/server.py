@@ -80,9 +80,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.path in ('/fonts/Geist.ttf', '/fonts/InstrumentSerif-Italic.ttf', '/fonts/InstrumentSerif-Regular.ttf', '/fonts/DMMono-Regular.ttf', '/fonts/NotoSansArabic.ttf'):
                 return self.respond((ROOT / path.path.lstrip('/')).read_bytes(), content_type='font/ttf')
             if path.path == '/api/status':
-                auth = t3.load_auth()
+                auth = None
                 return self.respond({'app': 'arabic-relay', 'version': __version__, 'crashed': diagnostics.crashed(), 'update': updates.state(),
-                                     'connected': bool(auth), 'csrf': CSRF,
+                                     'connected': False, 'csrf': CSRF,
                                      'nativeDesktop': os.environ.get('ARABIC_RELAY_NATIVE') == '1',
                                      **speech.status(), 'setupNeeded': firstrun.setup_needed(),
                                      'wisprFlowInstalled': locate.tool_path('wispr') is not None,
@@ -103,34 +103,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(firstrun.JOB.progress())
             if path.path == '/api/vocabulary':
                 return self.respond(store.personal_vocabulary())
-            if path.path == '/api/catalog':
-                return self.respond(catalog_response())
-            if path.path == '/api/direct/catalog':
-                return self.respond(direct_sessions.catalog())
-            if path.path == '/oauth/callback':
-                query = urllib.parse.parse_qs(path.query)
-                state = query.get('state', [''])[0]
-                with store.AUTH_LOCK:
-                    pending = t3.OAUTH.pop(state, None)
-                if not pending or time.time() - pending['created'] > 600:
-                    raise ValueError('This sign-in request expired. Return to Relay and click Connect T3.')
-                if query.get('iss', [''])[0] != t3.T3:
-                    raise ValueError('Sign-in issuer did not match T3.')
-                code = query.get('code', [''])[0]
-                if not code:
-                    raise ValueError('Sign-in was declined. Return to Relay to try again.')
-                token, _ = t3.request_json(t3.T3 + '/oauth/mcp/token', {
-                    'grant_type': 'authorization_code', 'code': code, 'client_id': pending['client_id'],
-                    'redirect_uri': ORIGIN + '/oauth/callback', 'code_verifier': pending['verifier'],
-                    'resource': t3.T3 + '/mcp'}, form=True)
-                token['client_id'] = pending['client_id']
-                token['expires_at'] = time.time() + token.get('expires_in', 3600)
-                with store.AUTH_LOCK:
-                    t3.save_auth(token)
-                    t3.MCP_SESSION = None
-                    t3.MCP_PROTOCOL = None
-                html = b'<html><title>Relay connected</title><body style="font:20px system-ui;padding:60px"><h1>T3 connected.</h1><p>You can return to Arabic Relay and click Refresh.</p><a href="/">Return to Relay</a></body></html>'
-                return self.respond(html, content_type='text/html; charset=utf-8')
             return self.respond({'error': 'Not found'}, 404)
         except Exception as error:
             self.fail(error)
@@ -172,10 +144,6 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body.get('requestId'), str):
                     raise ValueError('Invalid recording request.')
                 return self.respond(speech.cancel_preparation(body['requestId']))
-            if self.path == '/api/direct/claude/connect':
-                return self.respond(direct_sessions.connect_claude())
-            if self.path == '/api/direct/codex/connect':
-                return self.respond(direct_sessions.connect_codex())
             if self.path == '/api/wispr/open':
                 return self.respond(speech.open_wispr_flow())
             if self.path == '/api/whisper-model':
@@ -204,20 +172,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(diagnostics.dismiss_crash())
             if self.path == '/api/cohere/key':
                 return self.respond(speech.save_cohere_key(body.get('key')))
-            if self.path == '/api/connect':
-                registered, _ = t3.request_json(t3.T3 + '/oauth/mcp/register', {
-                    'client_name': 'Arabic Relay', 'redirect_uris': [ORIGIN + '/oauth/callback'],
-                    'grant_types': ['authorization_code'], 'response_types': ['code'], 'token_endpoint_auth_method': 'none'})
-                verifier = secrets.token_urlsafe(64)
-                state = secrets.token_urlsafe(32)
-                with store.AUTH_LOCK:
-                    t3.OAUTH.clear()
-                    t3.OAUTH[state] = {'client_id': registered['client_id'], 'verifier': verifier, 'created': time.time()}
-                challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-                args = {'response_type': 'code', 'client_id': registered['client_id'], 'state': state,
-                        'code_challenge': challenge, 'code_challenge_method': 'S256', 'redirect_uri': ORIGIN + '/oauth/callback',
-                        'scope': 'orchestration:read orchestration:operate', 'resource': t3.T3 + '/mcp'}
-                return self.respond({'url': t3.T3 + '/oauth/mcp/authorize?' + urllib.parse.urlencode(args)})
             if self.path == '/api/restore-english':
                 return self.respond(translate.restore_english(body.get('text'), body.get('vocabulary', '')))
             if self.path == '/api/translate':
@@ -234,10 +188,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(store.set_self_learning(body.get('enabled')))
             if self.path == '/api/auto-spelling':
                 return self.respond(store.set_auto_spelling(body.get('enabled')))
-            if self.path == '/api/send':
-                if body.get('mode') == 'inline':
-                    inline.verify_send(body)
-                return self.respond(t3.send_prompt(body))
             if self.path == '/api/history/delete':
                 return self.respond(history.delete(body.get('id')))
             if self.path == '/api/history/clear':

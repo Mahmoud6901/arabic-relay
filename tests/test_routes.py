@@ -13,26 +13,11 @@ from arabic_relay import __version__, inline, models, paths, server, translators
 
 
 class Routes(unittest.TestCase):
-    def test_inline_send_requires_exact_review_proof_before_destination(self):
-        def post(body):
-            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
-            connection.request('POST', '/api/send', json.dumps(body), headers={
-                'Origin': server.ORIGIN, 'X-Relay-Token': server.CSRF, 'Content-Type': 'application/json'})
-            response = connection.getresponse()
-            result = response.status
-            response.read()
-            connection.close()
-            return result
-        request = {'text': '  Check MapView.\r\n', 'requestId': 'route-inline-test-123456', 'revision': 7}
-        result = inline.process(request)
-        body = {'mode': 'inline', 'english': request['text'], 'inlineRevision': 7,
-                'inlineProof': result['proof'], 'targets': [], 'requestId': request['requestId']}
-        with patch.object(server.t3, 'send_prompt', return_value={'deliveries': []}) as send:
-            self.assertEqual(post({**body, 'english': request['text'].strip()}), 400)
-            self.assertEqual(post({**body, 'inlineRevision': 8}), 400)
-            send.assert_not_called()
-            self.assertEqual(post(body), 200)
-            self.assertEqual(send.call_args.args[0]['english'], request['text'])
+    def test_old_destination_and_send_routes_are_removed(self):
+        for method, route in (('GET','/api/catalog'), ('GET','/api/direct/catalog'),
+                              ('GET','/oauth/callback'), ('POST','/api/send'), ('POST','/api/connect'),
+                              ('POST','/api/direct/codex/connect'), ('POST','/api/direct/claude/connect')):
+            self.assertEqual(self.status(method, route), 404, route)
 
     def setUp(self):
         # POSTing every route must never touch real data or the real T3 service.
@@ -68,7 +53,7 @@ class Routes(unittest.TestCase):
     def test_every_interface_route_is_handled(self):
         html = (paths.ROOT / 'index.html').read_text(encoding='utf-8')
         routes = sorted(set(re.findall(r"""['"`](/api/[a-z/-]+)""", html)))
-        self.assertIn('/api/catalog', routes)
+        self.assertNotIn('/api/catalog', routes)
         self.assertIn('/api/transcribe', routes)
         unhandled = []
         with patch.object(server.t3, 'load_auth', return_value=None), \
@@ -89,15 +74,6 @@ class Routes(unittest.TestCase):
         self.assertEqual(response.status, 200, body)
         self.assertEqual(set(body['promptChoice']), {'tool', 'model', 'effort'})
         self.assertIn(' · ', body['promptLabel'])
-
-    def test_direct_setup_routes_require_same_origin_and_token(self):
-        for provider in ('claude', 'codex'):
-            route = '/api/direct/' + provider + '/connect'
-            self.assertEqual(self.status('POST', route), 200)
-            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
-            connection.request('POST', route, body=b'{}', headers={'Origin': 'https://example.com'})
-            self.assertEqual(connection.getresponse().status, 403)
-            connection.close()
 
     def test_browser_companion_routes_are_removed(self):
         for route in ('/api/browser/pair', '/api/browser/disconnect', '/bridge/pair', '/bridge/sync', '/bridge/result'):

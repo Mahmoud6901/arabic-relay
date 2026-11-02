@@ -24,19 +24,11 @@ class DesktopLifecycle(unittest.TestCase):
         httpd.shutdown.assert_called_once()
         httpd.server_close.assert_called_once()
 
-    def test_bridge_opens_only_an_active_local_t3_sign_in(self):
-        desktop.t3.OAUTH['test-state'] = {'client_id': 'test-client'}
-        url = 'http://127.0.0.1:3773/oauth/mcp/authorize?state=test-state&client_id=test-client'
-        with patch.object(desktop.webbrowser, 'open', return_value=True) as opened:
-            with self.assertRaises(ValueError):
-                desktop.DesktopApi().open_sign_in(url, 'wrong-token')
-            with self.assertRaises(ValueError):
-                desktop.DesktopApi().open_sign_in('https://example.com/', desktop.server.CSRF)
-            with self.assertRaises(ValueError):
-                desktop.DesktopApi().open_sign_in(url.replace('test-state', 'expired'), desktop.server.CSRF)
-            self.assertTrue(desktop.DesktopApi().open_sign_in(url, desktop.server.CSRF))
-            opened.assert_called_once_with(url)
-        desktop.t3.OAUTH.pop('test-state')
+    def test_session_sign_in_bridge_is_removed(self):
+        with patch.object(desktop.webbrowser, 'open') as opened:
+            with self.assertRaisesRegex(ValueError, 'removed'):
+                desktop.DesktopApi().open_sign_in('http://127.0.0.1:3773/oauth/mcp/authorize', desktop.server.CSRF)
+            opened.assert_not_called()
 
 
 class Updates(unittest.TestCase):
