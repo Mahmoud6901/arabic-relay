@@ -41,7 +41,7 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
   else if(url==='/api/vocabulary')data={words:[],corrections:[]};
   else if(url==='/api/stream/start')data={accepted:true};
   else if(url==='/api/stream/chunk'){if(chunkFailure){ok=false;data={error:'Recording audio arrived out of order.'};}else data={seq:Number(options.headers['X-Relay-Stream-Seq']),provisional:'عايز أعمل redesign'};}
-  else if(url==='/api/stream/finish'){if(finishGate)await finishGate;if(finishFailure){ok=false;data={error:'This recording is no longer active.'};}else data={text:'عايز أعمل redesign للصفحة',rawText:'عايز أعمل redesign للصفحة',incremental:{used:true,windows:2},timings:{path:'incremental',stopToFinalMs:420}};}
+  else if(url==='/api/stream/finish'){if(finishGate)await finishGate;if(finishFailure){ok=false;data={error:'This recording is no longer active.'};}else data={text:'عايز أعمل redesign للصفحة',rawText:'عايز أعمل redesign للصفحة',incremental:{used:true,passes:12,finalDecode:'none',tailSeconds:0},timings:{path:'incremental',stopToFinalMs:420}};}
   else if(url==='/api/stream/cancel')data={cancelled:true};
   else if(url==='/api/transcribe')data={text:'نص التسجيل كامل',rawText:'نص التسجيل كامل'};
   else if(url==='/api/translate')data={english:'Redesign the home page.',vocabulary:{words:[],corrections:[]}};
@@ -89,10 +89,11 @@ async function stop(){await nodes.get('stopRecording').click();await flush(8);}
  assert.deepEqual(ctx.modules,['/pcm-capture.js']);
  assert.equal(node.options.channelCount,1);
  assert.equal(JSON.parse(requests.find(r=>r.url==='/api/stream/start').options.body).inline,false);
- node.emit(new Int16Array(8000));node.emit(new Int16Array(8000));node.emit(new Int16Array(16000));await flush();
+ node.emit(new Int16Array(1600));node.emit(new Int16Array(1600));node.emit(new Int16Array(1600));node.emit(new Int16Array(4000));await flush();
  const chunks=requests.filter(r=>r.url==='/api/stream/chunk');
  assert.deepEqual(chunks.map(r=>r.options.headers['X-Relay-Stream-Seq']),['0','1']);
- assert.ok(chunks.every(r=>r.options.headers['Content-Type']==='application/octet-stream'&&r.options.body.length===16000));
+ assert.ok(chunks.every(r=>r.options.headers['Content-Type']==='application/octet-stream'&&true));
+ assert.deepEqual(chunks.map(r=>r.options.body.length),[4800,4000]);   // 100 ms frames batched to a quarter second
  assert.equal(nodes.get('provisionalText').hidden,false);
  assert.ok(nodes.get('provisionalText').textContent.startsWith('Provisional'));
  assert.equal(nodes.get('arabic').value,'');   // provisional text never enters the editable source
@@ -100,7 +101,7 @@ async function stop(){await nodes.get('stopRecording').click();await flush(8);}
  await stop();
  assert.ok(node.messages.includes('flush'));
  const finish=JSON.parse(requests.find(r=>r.url==='/api/stream/finish').options.body);
- assert.deepEqual([finish.lastSeq,finish.totalSamples],[2,36000]);
+ assert.deepEqual([finish.lastSeq,finish.totalSamples],[2,12800]);
  assert.equal(count('/api/transcribe'),0);
  assert.equal(nodes.get('arabic').value,'عايز أعمل redesign للصفحة');
  assert.equal(nodes.get('provisionalText').hidden,true);

@@ -3,7 +3,8 @@
 Configurations (identical audio, model, device and vocabulary; attributes gains to one change at a time):
   oneshot      the original path: one worker per recording, preloaded while the recording plays out
   warm         the reusable worker, whole recording decoded after Stop
-  incremental  the reusable worker, overlapping windows during the recording (fed in real time), fallback after Stop
+  incremental  the reusable worker, continuous passes during the recording (fed in real time, a quarter second per
+               chunk, as from the page), the confirmed words final at Stop; fallback to the whole recording
 
     python scripts/speech_benchmark.py --corpus .local/corpus --split dev --configs oneshot,warm,incremental \
         --modes craft,inline --device cuda --out .local/eval/run.json
@@ -91,6 +92,22 @@ def wav_pcm(data):
         return clip.readframes(clip.getnframes())
 
 
+def released_after(data, seconds):
+    """The clip cut `seconds` after its last audible sound: Stop pressed that long after the last word."""
+    import numpy as np
+    samples = np.frombuffer(wav_pcm(data), dtype='<i2')
+    energy = incremental.frame_energy(samples, 400)
+    loud = np.nonzero(energy >= max(incremental.PAUSE_RATIO * incremental.speech_level(samples), 30.0))[0]
+    end = min(len(samples), ((loud[-1] + 1) * 400 if len(loud) else 0) + int(seconds * incremental.RATE))
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(incremental.RATE)
+        clip.writeframes(samples[:end].tobytes())
+    return out.getvalue(), end / incremental.RATE
+
+
 def run_oneshot(folder, device, clip, data, inline_mode):
     rid = 'bench-' + os.urandom(12).hex()
     started = time.monotonic()
@@ -117,18 +134,21 @@ def run_incremental(folder, device, clip, data, inline_mode, pace=1.0):
     job = incremental.Job('bench-' + os.urandom(12).hex(), inline_mode, [], key, speech.window_transcriber(key))
     started, seq = time.monotonic(), -1
     try:
-        for index, start in enumerate(range(0, len(pcm), 2 * incremental.RATE)):
-            # Real time: chunk k is available one second after chunk k-1, as from a microphone.
-            due = started + (index + 1) / pace
+        step = incremental.RATE // 4                 # the page uploads a quarter second at a time
+        for index, start in enumerate(range(0, len(pcm), 2 * step)):
+            # Real time: each chunk is available a quarter second after the previous one, as from a microphone.
+            due = started + (index + 1) * step / incremental.RATE / pace
             time.sleep(max(0, due - time.monotonic()))
             seq = index
-            job.append(seq, pcm[start:start + 2 * incremental.RATE])
+            job.append(seq, pcm[start:start + 2 * step])
         stopped = time.monotonic()
         result, reason = job.finish(len(pcm) // 2, seq, timeout=90)
         if result is None:
             result = speech.engine_request(key, {'format': 'pcm16', 'keywords': [], **({'inline': True} if inline_mode else {})}, pcm)
-        return result, time.monotonic() - stopped, {'windows': len(job.windows), 'fallbackReason': reason,
-                                                    'windowInferenceMs': job.inference_ms}
+        return result, time.monotonic() - stopped, {'passes': len(job.windows), 'fallbackReason': reason,
+                                                    'finalDecode': job.final_decode if reason is None else 'whole',
+                                                    'tailSeconds': round(job.tail_seconds, 2),
+                                                    'passInferenceMs': job.inference_ms}
     finally:
         job.cancel()
 
@@ -174,6 +194,8 @@ def main():
     parser.add_argument('--model', default=str(Path(os.environ['LOCALAPPDATA']) / 'Arabic Relay' / 'models' / 'large-v3'))
     parser.add_argument('--clips', default='', help='comma-separated clip ids (default: the whole split)')
     parser.add_argument('--repeat', type=int, default=1)
+    parser.add_argument('--release-after', type=float, default=None,
+                        help='cut each clip this many seconds after its last audible sound (when Stop is pressed)')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     corpus = Path(args.corpus)
@@ -185,9 +207,9 @@ def main():
     rows, out = [], Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     meta = {'corpus': str(corpus), 'synthetic': manifest.get('synthetic'), 'split': args.split, 'device': args.device,
-            'model': models.model_label(folder), 'gpu': (models.gpu_info() or {}).get('name'), 'python': platform.python_version(),
-            'window': {'target': incremental.WINDOW_TARGET, 'cutSearch': incremental.CUT_SEARCH, 'overlap': incremental.HALF_OVERLAP * 2,
-                       'cap': incremental.WINDOW_CAP}, 'started': time.strftime('%Y-%m-%d %H:%M:%S')}
+            'model': models.model_label(folder), 'releaseAfter': args.release_after, 'gpu': (models.gpu_info() or {}).get('name'), 'python': platform.python_version(),
+            'streaming': {'firstPass': incremental.FIRST_PASS, 'step': incremental.STEP, 'trimAt': incremental.TRIM_AT,
+                          'keep': incremental.KEEP, 'tailMargin': incremental.TAIL_MARGIN}, 'started': time.strftime('%Y-%m-%d %H:%M:%S')}
     configs = args.configs.split(',')
     # The original path needs its own model process: run it as a block with the reusable worker stopped, and
     # interleave the reusable-worker configurations per clip so drift affects them alike.
@@ -205,6 +227,9 @@ def main():
             for repeat in range(args.repeat):
                 for clip in clips:
                     data = (corpus / (clip['id'] + '.wav')).read_bytes()
+                    if args.release_after is not None:
+                        data, seconds = released_after(data, args.release_after)
+                        clip = {**clip, 'seconds': seconds}
                     for config in block:
                         for mode in args.modes.split(','):
                             result, wait, extra = RUNNERS[config](folder, args.device, clip, data, mode == 'inline')
@@ -215,6 +240,7 @@ def main():
                             rows.append(row)
                             print(f"{config:11} {mode:6} {clip['id']:24} {row['postStopMs']:6} ms  WER {row['score']['wer']:.2f}"
                                   f"  terms {row['score']['termsKept']}/{row['score']['terms']}"
+                                  + (f"  passes {extra['passes']} final={extra['finalDecode']}" if 'passes' in extra else '')
                                   + (f"  fallback={extra.get('fallbackReason')}" if extra.get('fallbackReason') else ''), flush=True)
                             out.write_text(json.dumps({'meta': meta, 'rows': rows}, ensure_ascii=False, indent=1), encoding='utf-8')
     finally:

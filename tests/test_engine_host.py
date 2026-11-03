@@ -46,7 +46,11 @@ class Framing(unittest.TestCase):
     def test_window_and_payload_limits_are_enforced_in_the_worker(self):
         engine = Mock(transcribe=Mock(return_value={'text': 'x'}))
         with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):
-            speech_worker.handle_request(engine, {'format': 'pcm16', 'window': True}, pcm(17))
+            speech_worker.handle_request(engine, {'format': 'pcm16', 'window': True}, pcm(31))
+        with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):    # the prompt is bounded and only for passes
+            speech_worker.handle_request(engine, {'format': 'pcm16', 'window': True, 'context': 'x' * 401}, pcm())
+        with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):
+            speech_worker.handle_request(engine, {'format': 'pcm16', 'context': 'سابق'}, pcm())
         with self.assertRaisesRegex(ValueError, 'INVALID_AUDIO'):
             speech_worker.handle_request(engine, {'format': 'pcm16'}, b'\0' * 3)
         with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):
@@ -54,6 +58,36 @@ class Framing(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):
             speech_worker.handle_request(engine, {'format': 'pcm16', 'keywords': ['x'] * 41}, pcm())
         engine.transcribe.assert_not_called()
+        for bad in ({'format': 'pcm16', 'language': 'ar'}, {'format': 'pcm16', 'window': True, 'language': 'Arabic'},
+                    {'format': 'pcm16', 'window': True, 'language': 7}):
+            with self.assertRaisesRegex(ValueError, 'INVALID_REQUEST'):   # a reused language is only for passes
+                speech_worker.handle_request(engine, bad, pcm())
+        engine.transcribe.assert_not_called()
+        speech_worker.handle_request(engine, {'format': 'pcm16', 'window': True, 'context': 'عايز أعمل', 'language': 'ar'}, pcm(20))
+        self.assertEqual(engine.transcribe.call_args.kwargs['context'], 'عايز أعمل')
+        self.assertEqual(engine.transcribe.call_args.kwargs['language'], 'ar')
+
+    def test_a_pass_reuses_the_language_and_still_detects_it_per_segment(self):
+        model = Mock()
+        model.model.is_multilingual = True
+        model.transcribe.return_value = ([], Mock(language='ar'))
+        speech_worker.decode(model, np.zeros(16000, dtype=np.float32), 'cuda', [], window=True, language='ar')
+        options = model.transcribe.call_args.kwargs
+        self.assertEqual((options['beam_size'], options['language'], options['multilingual']), (5, 'ar', True))
+        speech_worker.decode(model, np.zeros(16000, dtype=np.float32), 'cuda', [], inline_mode=True, language='ar')
+        options = model.transcribe.call_args.kwargs       # a whole recording keeps the baseline settings
+        self.assertEqual((options['beam_size'], options['language'], options['multilingual']), (5, None, True))
+
+    def test_a_pass_continues_the_confirmed_text_as_its_prompt(self):
+        model = Mock()
+        model.model.is_multilingual = True
+        model.transcribe.return_value = ([], Mock(language='ar'))
+        speech_worker.decode(model, np.zeros(16000, dtype=np.float32), 'cuda', ['React'], window=True, context='عايز أعمل')
+        self.assertEqual(model.transcribe.call_args.kwargs['initial_prompt'], 'React عايز أعمل')
+        speech_worker.decode(model, np.zeros(16000, dtype=np.float32), 'cuda', [], inline_mode=True, window=True, context='سابق')
+        self.assertEqual(model.transcribe.call_args.kwargs['initial_prompt'], 'سابق')
+        speech_worker.decode(model, np.zeros(16000, dtype=np.float32), 'cuda', ['React'], window=True)
+        self.assertEqual(model.transcribe.call_args.kwargs['initial_prompt'], 'React')
 
 
 class Host(unittest.TestCase):

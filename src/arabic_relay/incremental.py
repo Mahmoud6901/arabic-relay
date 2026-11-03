@@ -1,9 +1,14 @@
-"""Processing during speech: overlapping offline Whisper windows over a bounded 16 kHz PCM recording.
+"""Processing during speech, in the style of Hex: continuous passes over the unconfirmed audio while the user talks.
 
-This is incremental processing around an offline model, not a streaming recognizer. Every window is decoded
-whole; neighbouring windows overlap by two seconds around a proposed pause. The final transcript joins windows at
-those pauses using absolute word timestamps. Anything uncertain (a missing window, inconsistent timestamps, an
-ambiguous seam, a failed decode, a backlog) falls back to decoding the complete recording.
+Whisper is an offline model, so this is not a native streaming recognizer. While the user speaks, Relay decodes the
+audio that is not confirmed yet, again and again: a pass starts as soon as the previous one ends and enough new audio
+has arrived. A word is confirmed once two consecutive passes read it the same way (local agreement), and confirmed
+audio is trimmed from later passes at a pause, so each pass stays short. No pass runs while the user is silent:
+once the latest pass has heard the last word and a little silence after it, the GPU waits for new speech. So at
+Stop the latest reading is usually final already and no decode remains; otherwise one last pass decodes the tail.
+
+Anything uncertain (a failed decode, inconsistent timestamps, audio that arrived out of order, a buffer that never
+confirms) falls back to decoding the whole recording with the baseline settings.
 """
 import logging
 import re
@@ -15,19 +20,19 @@ RATE = 16000
 MAX_SECONDS = 300
 MAX_SAMPLES = MAX_SECONDS * RATE
 MAX_CHUNK = 2 * RATE                 # samples per transport chunk
-WINDOW_TARGET = 12.0                 # prototype parameters: tunable candidates, not approved thresholds
-CUT_SEARCH = (7.0, 14.0)             # where a cut may fall, relative to the window start
-CUT_TARGET = 12.0                    # the pause nearest this point wins
-HALF_OVERLAP = 1.0                   # without a real pause: each window runs this far past its cut, the next starts this far before
-MIN_SEARCH = 3.0                     # seconds of audio the pause search needs before a window is planned
-PAUSE_RATIO = 0.12                   # a frame quieter than this fraction of the window's speech level counts as pause
-MIN_PAUSE_FRAMES = 3                 # 300 ms
-WINDOW_CAP = 15.0
-BACKLOG_LIMIT = 30.0                 # unprocessed recorded audio before partial inference stops
-FINAL_LIMIT = 30.0                   # audio still unprocessed at Stop that windows may finish; beyond, whole clip
-SEAM_MARGIN = 0.6
-SEAM_EDGE = 0.25
+FIRST_PASS = 1.0                     # seconds of audio before the first pass
+STEP = 0.5                           # new audio a later pass waits for
+KEEP = 5.0                           # a trimmed buffer still holds this much recent audio (context, language detection)
+TRIM_AT = 10.0                       # the unconfirmed buffer is trimmed at a confirmed pause once longer than this
+FORCE_TRIM_AT = 20.0                 # without a pause, at the last confirmed word once longer than this
+BUFFER_CAP = 28.0                    # the worker decodes at most 30 s at once; beyond this, the whole clip after Stop
+TAIL_MARGIN = 0.2                    # a final pass must end with this much silence, so its last word is whole
+TRIM_GAP = 0.15                      # a pause between two words long enough to cut the buffer in
+PAUSE_RATIO = 0.12                   # a frame quieter than this fraction of the speech level counts as silence
+CONTEXT_CHARS = 200                  # confirmed text before the buffer, given to the next pass as its prompt
+KEPT_RESULTS = 3                     # older passes keep only their position, not their decoded words
 JOB_ID = re.compile(r'[A-Za-z0-9_-]{20,100}')
+LANGUAGE = re.compile(r'[a-z]{2,3}')
 IDLE_EXPIRY = 45                     # seconds without a chunk before an unfinished recording is discarded
 
 
@@ -38,7 +43,7 @@ class Ambiguous(Exception):
 # --- Pure helpers (tested directly) ----------------------------------------------------------------------------
 
 def frame_energy(samples, frame=1600):
-    """RMS per 100 ms frame of int16 samples."""
+    """RMS per frame (100 ms by default) of int16 samples."""
     import numpy as np
     count = len(samples) // frame
     if not count:
@@ -47,56 +52,23 @@ def frame_energy(samples, frame=1600):
     return np.sqrt(np.mean(blocks * blocks, axis=1))
 
 
-def plan_cut(read, start, available, final=False):
-    """The next window (start, end, cut, half) in samples, or None when more audio is needed.
-
-    `read(low, high)` returns int16 samples in [low, high). A cut is a proposed pause, never permission to drop
-    audio: the window runs `half` samples past the cut and the next one starts `half` before it. When the search
-    range holds a real pause (a quiet run of at least 300 ms, relative to this window's speech level), the cut is
-    its centre and both window edges stay inside the silence, so no word is split. Otherwise the cut is the
-    quietest frame and the windows overlap by two seconds for the seam to be reconciled from both sides.
-    """
-    remaining = available - start
-    if remaining <= 0:
-        return None
-    if final and remaining <= WINDOW_CAP * RATE:
-        return start, available, None, 0
-    if remaining < (CUT_SEARCH[0] + MIN_SEARCH) * RATE:
-        return None                     # too little audio to look for a pause without cutting blind
-    low = start + int(CUT_SEARCH[0] * RATE)
-    # Search as far as the target allows, but always leave room to extend past the cut for the overlap.
-    high = min(start + int(CUT_SEARCH[1] * RATE), available - int(HALF_OVERLAP * RATE))
-    if high <= low:
-        return None
-    energy = frame_energy(read(low, high))
-    if not len(energy):
-        return None
+def speech_level(samples):
+    """The loud end of the speech in `samples` (int16): the 90th percentile of 100 ms frame levels."""
     import numpy as np
-    level = float(np.percentile(frame_energy(read(start, high)), 90))
-    quiet = energy < max(PAUSE_RATIO * level, 30.0)
-    runs, begin = [], None
-    for index, silent in enumerate(list(quiet) + [False]):
-        if silent and begin is None:
-            begin = index
-        elif not silent and begin is not None:
-            runs.append((begin, index))
-            begin = None
-    runs = [run for run in runs if run[1] - run[0] >= MIN_PAUSE_FRAMES]
-    if runs:
-        # The pause nearest the target length; longer pauses win ties so both window edges stay in the silence.
-        first, last = min(runs, key=lambda run: (abs(low + (run[0] + run[1]) * 800 - (start + int(CUT_TARGET * RATE))),
-                                                 -(run[1] - run[0])))
-        cut = low + (first + last) * 800
-        half = min(int(HALF_OVERLAP * RATE), max(int(.15 * RATE), (last - first) * 800 - 800))
-    else:
-        target = start + int(CUT_TARGET * RATE)
-        near = [i for i in range(len(energy)) if abs(low + (i + .5) * 1600 - target) <= 2 * RATE]
-        index = min(near, key=lambda i: energy[i]) if near else int(energy.argmin())
-        cut = low + index * 1600 + 800
-        half = int(HALF_OVERLAP * RATE)
-    # Never let a window grow past the cap, whatever the cut.
-    cut = min(cut, start + int(WINDOW_CAP * RATE) - half)
-    return start, cut + half, cut, half
+    energy = frame_energy(samples)
+    return float(np.percentile(energy, 90)) if len(energy) else 0.0
+
+
+def silent(tail, level):
+    """True when `tail` (int16 samples) holds no speech, judged against the recording's speech `level`."""
+    import numpy as np
+    if not len(tail):
+        return True
+    threshold = max(PAUSE_RATIO * level, 30.0)
+    frames = frame_energy(tail, 400)                 # 25 ms frames: a short tail still gets several
+    if not len(frames):
+        frames = np.sqrt(np.mean(np.asarray(tail, dtype=np.float32) ** 2, keepdims=True))
+    return bool((frames < threshold).all())
 
 
 ARABIC_FOLD = str.maketrans({'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا', 'ى': 'ي', 'ة': 'ه', 'ـ': None})
@@ -107,12 +79,17 @@ def normalize(word):
     return ''.join(c for c in text if not ud.category(c).startswith(('P', 'M', 'Z', 'C', 'S')))
 
 
+def key(word):
+    """What two passes must agree on: the normalized word, or the raw token for punctuation-only tokens."""
+    return normalize(word['text']) or word['text'].strip()
+
+
 def middle(word):
     return (word['start_s'] + word['end_s']) / 2
 
 
 def window_words(window):
-    """Window-local Whisper words moved onto the recording timeline, with their segment metrics."""
+    """A pass's Whisper words moved onto the recording timeline, with their segment metrics."""
     offset = window['start'] / RATE
     duration = (window['end'] - window['start']) / RATE
     words = []
@@ -128,152 +105,88 @@ def window_words(window):
                 raise Ambiguous('timestamp outside window')
             words.append({'start_s': start + offset, 'end_s': end + offset, 'text': item.get('text', ''),
                           'probability': item.get('probability'), 'window': window['index'], 'segment': index,
-                          'metrics': {key: segment.get(key) for key in ('avg_logprob', 'no_speech_prob', 'compression_ratio')}})
+                          'metrics': {name: segment.get(name) for name in ('avg_logprob', 'no_speech_prob', 'compression_ratio')}})
     for before, after in zip(words, words[1:]):
         if middle(after) + 0.05 < middle(before):
             raise Ambiguous('timestamps out of order')
     return words
 
 
-def same_word(a, b):
-    return normalize(a['text']) == normalize(b['text']) and abs(middle(a) - middle(b)) <= 0.6
+class Agreement:
+    """Local agreement over consecutive passes: a word is confirmed when two passes in a row read it alike."""
+
+    def __init__(self):
+        self.committed = []      # confirmed words on the recording timeline
+        self.tentative = []      # the latest pass's unconfirmed words
+
+    def last_time(self):
+        return self.committed[-1]['end_s'] if self.committed else 0.0
+
+    def fresh(self, words):
+        """The words of a pass that are not confirmed yet: later than the last confirmed word, without the
+        confirmed words that a pass over untrimmed audio hears again (matched as a run of up to five words)."""
+        if not self.committed:
+            return list(words)
+        last = self.last_time()
+        words = [word for word in words if word['start_s'] > last - 0.1]
+        if words and abs(words[0]['start_s'] - last) < 1:
+            for n in range(min(len(self.committed), len(words), 5), 0, -1):
+                if [key(w) for w in self.committed[-n:]] == [key(w) for w in words[:n]]:
+                    return words[n:]
+        return words
+
+    def update(self, words):
+        """Confirm the longest prefix this pass shares with the previous pass; returns the newly confirmed words."""
+        words = self.fresh(words)
+        confirmed = []
+        for previous, current in zip(self.tentative, words):
+            if key(previous) != key(current):
+                break
+            confirmed.append(current)
+        self.committed += confirmed
+        self.tentative = words[len(confirmed):]
+        return confirmed
 
 
-def align(previous, following):
-    """Longest common subsequence where a match needs the same normalized word at nearly the same time, so
-    repeated words pair with their own occurrence rather than a neighbour."""
-    n, m = len(previous), len(following)
-    table = [[0] * (m + 1) for _ in range(n + 1)]
-    for i in range(n - 1, -1, -1):
-        for j in range(m - 1, -1, -1):
-            table[i][j] = (table[i + 1][j + 1] + 1 if same_word(previous[i], following[j])
-                           else max(table[i + 1][j], table[i][j + 1]))
-    i = j = 0
-    while i < n and j < m:
-        if same_word(previous[i], following[j]) and table[i][j] == table[i + 1][j + 1] + 1:
-            yield 'both', previous[i], following[j]
-            i, j = i + 1, j + 1
-        elif table[i + 1][j] >= table[i][j + 1]:
-            yield 'previous', previous[i], None
-            i += 1
-        else:
-            yield 'following', None, following[j]
-            j += 1
-    for word in previous[i:]:
-        yield 'previous', word, None
-    for word in following[j:]:
-        yield 'following', None, word
-
-
-def overlap(a, b):
-    """Seconds two words share on the recording timeline."""
-    return min(a['end_s'], b['end_s']) - max(a['start_s'], b['start_s'])
-
-
-def substitution_groups(previous, following):
-    """Connected groups of unmatched words whose times overlap across the two windows."""
-    nodes = [('p', w) for w in previous] + [('f', w) for w in following]
-    parent = list(range(len(nodes)))
-
-    def root(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-    for i, (side_a, a) in enumerate(nodes):
-        for j, (side_b, b) in enumerate(nodes):
-            if side_a == 'p' and side_b == 'f':
-                shortest = min(a['end_s'] - a['start_s'], b['end_s'] - b['start_s'])
-                if overlap(a, b) > max(.05, .3 * shortest):
-                    parent[root(i)] = root(j)
-    groups = {}
-    for i, node in enumerate(nodes):
-        groups.setdefault(root(i), []).append(node)
-    return list(groups.values())
-
-
-# Matched against normalized words (punctuation removed, so "don't" is "dont"). The last branch is the Egyptian
-# circumfix negation م…ش (متغيرش، ماتمسحش).
-NEGATION = re.compile(r'^(?:و)?(?:مش|ما|مفيش|مافيش|لا|لم|لن|ليس|مو|not|no|never|dont|doesnt|didnt|wont|cant)$|^م.+ش$', re.I)
-NUMBER_WORD = re.compile(r'[0-9]|[٠-٩]|واحد|اتنين|اثنين|تلات|ثلاث|اربع|أربع|خمس|ست|سبع|تمان|ثمان|تسع|عشر|مية|مائة|ميت|الف|ألف|'
-                         r'zero|one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|hundred|thousand', re.I)
-
-
-def variants(mine, theirs):
-    """True when two readings of one moment are spelling variants of the same words, not different words.
-    Numbers and negation must agree exactly; anything else needs the joined letters to be close."""
-    a = ''.join(normalize(w['text']) for w in mine)
-    b = ''.join(normalize(w['text']) for w in theirs)
-    if not a or not b:
-        return False
-    for check in (lambda w: bool(NEGATION.search(normalize(w['text']))), lambda w: bool(NUMBER_WORD.search(w['text']))):
-        if any(map(check, mine + theirs)) and a != b:
-            return False
-    import difflib
-    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio() >= .6
-
-
-def merge_seam(previous, following, cut, edges, previous_all, following_all):
-    """Join the words both windows saw near one cut.
-
-    A word both windows heard alike is kept once. Where the windows heard the same moment differently (a spelling
-    variant or a word split differently), the version decoded further from its window's edge, with more context,
-    is kept. A word only one window heard is kept unless it is a stretched edge artifact, or the other window also
-    heard that span (then a drop or duplicate cannot be ruled out): Ambiguous.
-    `edges` is (end of the previous window, start of the following window) in seconds; `*_all` are whole-window
-    word lists used to prove that the other window produced nothing over a word's time span.
-    """
-    joined, left, right = [], [], []
-    for kind, a, b in align(previous, following):
-        if kind == 'both':
-            joined.append(a if (middle(a) + middle(b)) / 2 < cut else b)
-        elif kind == 'previous':
-            left.append(a)
-        else:
-            right.append(b)
-    for group in substitution_groups(left, right):
-        mine = [w for side, w in group if side == 'p']
-        theirs = [w for side, w in group if side == 'f']
-        if mine and theirs and variants(mine, theirs):
-            centre = sum(map(middle, mine + theirs)) / len(group)
-            joined += mine if edges[0] - centre >= centre - edges[1] else theirs
+def trim_point(committed, tentative, buffer_start, available):
+    """Where the next pass may start, in seconds, or None. Only confirmed words before the last KEEP seconds are cut
+    away, and only in a pause between two words or at the end of a Whisper segment, so no word is split."""
+    length = available - buffer_start
+    if length <= TRIM_AT:
+        return None
+    limit = available - KEEP
+    words = [w for w in committed if w['start_s'] >= buffer_start]
+    sequence = words + tentative
+    best = None
+    for index, word in enumerate(words):
+        if word['end_s'] > limit:
+            break
+        following = sequence[index + 1] if index + 1 < len(sequence) else None
+        if following is None:
             continue
-        for side, word in group:
-            if side == 'p' and middle(word) < cut - SEAM_EDGE:
-                joined.append(word)          # the earlier window heard it with full context
-            elif side == 'f' and middle(word) >= cut + SEAM_EDGE:
-                joined.append(word)          # the later window heard it with full context
-            elif any(overlap(word, other) > .15 for other in (following_all if side == 'p' else previous_all)):
-                # Both windows produced words over this span and they disagree: a drop or duplicate is possible.
-                raise Ambiguous('unmatched word at the cut')
-            else:
-                joined.append(word)          # only one window heard anything here, so nothing can be lost or doubled
-    return sorted(joined, key=middle)
+        gap = following['start_s'] - word['end_s']
+        boundary = following['window'] == word['window'] and following['segment'] != word['segment']
+        if gap >= TRIM_GAP or (boundary and gap >= 0):
+            best = word['end_s'] + gap / 2
+    if best is None and length > FORCE_TRIM_AT:
+        ended = [w for w in words if w['end_s'] <= available - 1]
+        if ended:
+            best = ended[-1]['end_s']
+    return best if best is not None and best > buffer_start else None
 
 
-def reconcile(windows):
-    """All windows, in order, to one word list. Raises Ambiguous rather than guessing."""
-    if not windows or windows[0]['start'] != 0:
-        raise Ambiguous('missing coverage')
-    for before, after in zip(windows, windows[1:]):
-        if before['cut'] is None or not before['start'] < after['start'] < before['cut'] < before['end']:
-            raise Ambiguous('missing coverage')
-        if after['start'] != before['cut'] - before.get('half', int(HALF_OVERLAP * RATE)):
-            raise Ambiguous('missing coverage')
-    words = window_words(windows[0])
-    output = []
-    for index, window in enumerate(windows[1:], start=1):
-        cut = windows[index - 1]['cut'] / RATE
-        low, high = cut - SEAM_MARGIN, cut + SEAM_MARGIN
-        # The same span from both windows; outside it, each window keeps only its own side.
-        output += [word for word in words if middle(word) < low]
-        following = window_words(window)
-        output += merge_seam([word for word in words if low <= middle(word) < high],
-                             [word for word in following if low <= middle(word) < high], cut,
-                             (windows[index - 1]['end'] / RATE, window['start'] / RATE),
-                             window_words(windows[index - 1]), following)
-        words = [word for word in following if middle(word) >= high]
-    return output + words
+def tail_cut(committed, tentative, buffer_start):
+    """At Stop: where the tail pass starts, in seconds. Only the unconfirmed words still need decoding, so the pass
+    starts in the latest pause before them; without a pause, at the start of the last confirmed word, which the pass
+    hears again and drops. Confirmed text before the cut is the pass's prompt."""
+    words = [w for w in committed if w['start_s'] >= buffer_start]
+    if not words:
+        return buffer_start
+    sequence = words + tentative[:1]
+    for before, after in reversed(list(zip(sequence, sequence[1:]))):
+        if after['start_s'] - before['end_s'] >= TRIM_GAP:
+            return (before['end_s'] + after['start_s']) / 2
+    return words[-1]['start_s']
 
 
 def assemble(words):
@@ -284,9 +197,9 @@ def assemble(words):
         if previous is not None and previous['window'] != word['window'] and not piece[:1].isspace() and not text[-1:].isspace():
             piece = ' ' + piece
         text += piece
-        key = (word['window'], word['segment'])
-        if not segments or segments[-1]['key'] != key:
-            segments.append({'key': key, 'start_s': word['start_s'], 'end_s': word['end_s'], 'text': '',
+        segment_key = (word['window'], word['segment'])
+        if not segments or segments[-1]['key'] != segment_key:
+            segments.append({'key': segment_key, 'start_s': word['start_s'], 'end_s': word['end_s'], 'text': '',
                              **word['metrics'], 'words': []})
         segment = segments[-1]
         segment['end_s'] = word['end_s']
@@ -302,22 +215,29 @@ def assemble(words):
 # --- Recording jobs ------------------------------------------------------------------------------------------
 
 class Job:
-    """One recording's PCM, its windows and its provisional text. Owned by its unguessable job ID."""
+    """One recording's PCM, its passes and its provisional text. Owned by its unguessable job ID."""
 
     def __init__(self, job_id, inline_mode, keywords, key, transcriber, rules=None):
         self.id = job_id
         self.inline = inline_mode
         self.keywords = list(keywords)
-        self.rules = rules                 # approved vocabulary rules in force when the recording started
         self.key = key                     # model folder and device, snapshotted at job start
+        self.rules = rules                 # approved vocabulary rules in force when the recording started
         self.transcriber = transcriber     # callable(header, payload, cancel_event) -> worker result
         self.pcm = bytearray()
         self.next_seq = 0
-        self.windows = []
-        self.next_start = 0
+        self.windows = []                  # passes, oldest first: index, start, end (samples), newest results
+        self.agreement = Agreement()
+        self.buffer_start = 0              # samples: where the unconfirmed audio begins
+        self.decoded_to = 0                # samples: the end of the audio the latest pass decoded
+        self.level = 0.0                   # the loudest speech level any pass has decoded
+        self.language = None               # detected by the first pass that heard words; later passes reuse it
+        self.final_words = None
+        self.final_decode = None           # 'none' when the latest pass was already final, 'tail' otherwise
+        self.tail_seconds = 0.0
         self.closed = False
         self.cancelled = threading.Event()
-        self.stopped_reason = None         # why partial inference stopped early
+        self.stopped_reason = None         # why processing during speech stopped early
         self.provisional = ''
         self.condition = threading.Condition()
         self.created = self.touched = time.monotonic()
@@ -335,7 +255,7 @@ class Job:
             if self.closed or self.cancelled.is_set():
                 raise ValueError('This recording has already finished.')
             if type(seq) is not int or seq != self.next_seq:
-                # Never silently duplicate or drop audio: a gap or repeat ends incremental processing.
+                # Never silently duplicate or drop audio: a gap or repeat ends processing during speech.
                 raise ValueError('Recording audio arrived out of order.')
             if not payload or len(payload) % 2 or len(payload) > MAX_CHUNK * 2:
                 raise ValueError('Invalid recording audio.')
@@ -353,16 +273,27 @@ class Job:
     def stop_partials(self, reason):
         if self.stopped_reason is None:
             self.stopped_reason = reason
-            logging.info('Incremental dictation: partial processing stopped (%s)', reason)
+            logging.info('Incremental dictation: processing during speech stopped (%s)', reason.split(':')[0])
 
-    def next_window(self):
-        """Called with the condition held."""
-        available = len(self.pcm) // 2
-        limit = FINAL_LIMIT if self.closed else BACKLOG_LIMIT
-        if available - self.next_start > limit * RATE:
-            self.stop_partials('backlog')
-            return None
-        return plan_cut(self.read, self.next_start, available, final=self.closed)
+    def context(self):
+        """Confirmed text before the buffer: the prompt that keeps a trimmed pass consistent with what came before."""
+        before = [w['text'] for w in self.agreement.committed if middle(w) < self.buffer_start / RATE]
+        return ''.join(before).strip()[-CONTEXT_CHARS:]
+
+    def final_ready(self, available):
+        """The latest pass is final when its last moments and everything since are silence: it heard the last word
+        whole, and nothing was said after it."""
+        if not self.windows or self.decoded_to <= self.buffer_start:
+            return False
+        start = max(self.buffer_start, self.decoded_to - int(TAIL_MARGIN * RATE))
+        return silent(self.read(start, available), self.level)
+
+    def due(self, available):
+        """Whether the next pass during recording should start: enough new audio, and some of it is speech."""
+        needed = (STEP if self.windows else FIRST_PASS) * RATE
+        if available - max(self.decoded_to, self.buffer_start) < needed:
+            return False
+        return not self.final_ready(available)
 
     def run(self):
         while True:
@@ -370,26 +301,33 @@ class Job:
                 while True:
                     if self.cancelled.is_set() or self.stopped_reason is not None:
                         return
-                    plan = self.next_window()
-                    if plan is not None or self.stopped_reason is not None:
+                    available = len(self.pcm) // 2
+                    if self.closed or self.due(available):
                         break
-                    if self.closed:
-                        return            # nothing left to decode
-                    self.condition.wait(.5)
-                if plan is None:
+                    self.condition.wait(.25)
+                final = self.closed
+                if available - self.buffer_start > BUFFER_CAP * RATE:
+                    # Passes cannot keep up or never agree: Stop decodes the whole recording instead.
+                    self.stop_partials('backlog')
+                    self.condition.notify_all()
                     return
-                start, end, cut, half = plan
+                if final and (available <= self.buffer_start or self.final_ready(available)):
+                    self.final_words = self.agreement.committed + self.agreement.tentative
+                    self.final_decode = 'none'
+                    self.tail_seconds = 0.0
+                    self.condition.notify_all()
+                    return
+                if final:
+                    cut = tail_cut(self.agreement.committed, self.agreement.tentative, self.buffer_start / RATE)
+                    self.buffer_start = min(available, max(self.buffer_start, int(cut * RATE)))
+                start, end = self.buffer_start, available
                 payload = bytes(self.pcm[start * 2:end * 2])
-                # A recording that ends before any window was decoded is one whole clip. Craft mode then needs no
-                # word timestamps to join anything, so it is decoded exactly as the whole-recording path decodes it
-                # (measured: word timestamps added ~0.3 s after Stop to short Craft recordings).
-                whole = start == 0 and cut is None and not self.windows and not self.inline
+                header = {'format': 'pcm16', 'window': True, 'inline': self.inline, 'keywords': self.keywords,
+                          'context': self.context(), **({'language': self.language} if self.language else {})}
             index = len(self.windows)
             started = time.monotonic()
             try:
-                # The same recognition settings as a whole recording in this writing mode, plus word timestamps.
-                result = self.transcriber({'format': 'pcm16', 'window': not whole, 'inline': self.inline,
-                                           'keywords': self.keywords}, payload, self.cancelled)
+                result = self.transcriber(header, payload, self.cancelled)
             except Exception as error:
                 with self.condition:
                     self.stop_partials('failed: ' + getattr(error, 'code', type(error).__name__))
@@ -400,34 +338,39 @@ class Job:
             with self.condition:
                 if self.cancelled.is_set():
                     return                # results of a cancelled job are invalid
-                elapsed = round((time.monotonic() - started) * 1000)
-                self.inference_ms.append(elapsed)
-                self.windows.append({'index': index, 'start': start, 'end': end, 'cut': cut, 'half': half,
-                                     'result': result, 'whole': whole})
-                if whole:
-                    self.times.setdefault('firstPartial', time.monotonic())
-                    self.condition.notify_all()
-                    return
-                self.next_start = end if cut is None else cut - half
-                if not self.closed and cut is not None and elapsed > (end - start) / RATE * 1000:
-                    # Decoding this window took longer than the audio it covered while more audio is still
-                    # arriving: inference cannot catch up on this machine, so Stop decodes the whole recording
-                    # with the baseline settings instead of spending more time on windows.
-                    self.stop_partials('behind')
-                    self.condition.notify_all()
-                    return
+                self.inference_ms.append(round((time.monotonic() - started) * 1000))
+                window = {'index': index, 'start': start, 'end': end, 'result': result}
                 try:
-                    # Provisional only: the newest window's tail can still change at the next seam.
-                    self.provisional = assemble(reconcile(self.windows))[0]
+                    words = window_words(window)
                 except Ambiguous as error:
                     self.stop_partials('seam: ' + str(error))
+                    self.condition.notify_all()
+                    return
+                self.windows.append(window)
+                self.level = max(self.level, speech_level(self.read(start, end)))
+                detected = ((result.get('effectiveAsrConfig') or {}).get('detectedLanguage'))
+                if words and self.language is None and isinstance(detected, str) and LANGUAGE.fullmatch(detected):
+                    self.language = detected
+                for old in self.windows[:-KEPT_RESULTS]:
+                    old.pop('result', None)
+                self.decoded_to = end
+                if final:
+                    # The tail after Stop: everything this pass heard that is not confirmed is final.
+                    self.final_words = self.agreement.committed + self.agreement.fresh(words)
+                    self.final_decode = 'tail'
+                    self.tail_seconds = (end - start) / RATE
+                    self.condition.notify_all()
+                    return
+                self.agreement.update(words)
+                cut = trim_point(self.agreement.committed, self.agreement.tentative, self.buffer_start / RATE, end / RATE)
+                if cut is not None:
+                    self.buffer_start = min(end, max(self.buffer_start, int(cut * RATE)))
+                self.provisional = assemble(self.agreement.committed + self.agreement.tentative)[0]
                 self.times.setdefault('firstPartial', time.monotonic())
                 self.condition.notify_all()
-                if cut is None:
-                    return
 
     def finish(self, total_samples, last_seq, timeout):
-        """Close input and wait (bounded) for outstanding windows; returns (result or None, reason)."""
+        """Close input and wait (bounded) for the final reading; returns (result or None, reason)."""
         with self.condition:
             if self.cancelled.is_set():
                 raise ValueError('This recording was cancelled.')
@@ -442,34 +385,23 @@ class Job:
                 self.stop_partials('timeout')
             if self.stopped_reason is not None:
                 return None, self.stopped_reason
-            if not self.windows or self.windows[-1]['cut'] is not None or self.windows[-1]['end'] != len(self.pcm) // 2:
+            if self.final_words is None:
                 return None, 'missing coverage'
-            if self.windows[0].get('whole'):
-                only = self.windows[0]['result']
-                text = only['text'] if isinstance(only.get('text'), str) else ''.join(
-                    segment.get('text', '') for segment in only.get('segments') or [])
-                return {'text': text.strip(), 'segments': [], 'device': only.get('device', 'GPU'),
-                        'fallback': bool(only.get('fallback')), 'seconds': len(self.pcm) / 2 / RATE,
-                        'effectiveAsrConfig': {'path': 'incremental', 'windows': 1, 'wholeClip': True,
-                                               'wordTimestamps': False}}, None
-            try:
-                words = reconcile(self.windows)
-            except Ambiguous as error:
-                return None, 'seam: ' + str(error)
-            text, segments = assemble(words)
-            last = self.windows[-1]['result']
+            text, segments = assemble(self.final_words)
+            last = next((w['result'] for w in reversed(self.windows) if 'result' in w), {})
             return {'text': text, 'segments': segments, 'device': last.get('device', 'GPU'),
-                    'fallback': any(w['result'].get('fallback') for w in self.windows),
+                    'fallback': bool(last.get('fallback')),
                     'seconds': len(self.pcm) / 2 / RATE,
                     'effectiveAsrConfig': {**(last.get('effectiveAsrConfig') or {}), 'path': 'incremental',
-                                           'windows': len(self.windows), 'windowSeconds': WINDOW_TARGET,
-                                           'overlapSeconds': [round(2 * w['half'] / RATE, 2) for w in self.windows[:-1]]}}, None
+                                           'passes': len(self.windows), 'finalDecode': self.final_decode,
+                                           'tailSeconds': round(self.tail_seconds, 2)}}, None
 
     def cancel(self):
         self.cancelled.set()
         with self.condition:
             self.pcm = bytearray()
             self.windows = []
+            self.agreement = Agreement()
             self.provisional = ''
             self.condition.notify_all()
 

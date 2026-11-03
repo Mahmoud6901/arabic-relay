@@ -485,7 +485,12 @@ def engine_enabled():
 
 
 def incremental_enabled():
-    return bool(store.get_setting('incremental_dictation', 0))
+    """On by default with a GPU (the model keeps up with speech there); off by default on the CPU, where large
+    models decode slower than real time. An explicit choice in Settings always wins."""
+    choice = store.get_setting('incremental_dictation')
+    if choice is None:
+        return speech_device() == 'cuda'
+    return bool(choice)
 
 
 def set_incremental(enabled):
@@ -629,14 +634,16 @@ def stream_finish(job_id, last_seq, total_samples):
         response = whisper_response(result, Path(job.key[0]), job.inline, job.rules)
         done = time.monotonic()
         times = job.times
-        response['incremental'] = {'used': reason is None, 'windows': len(job.windows),
+        response['incremental'] = {'used': reason is None, 'passes': len(job.windows),
+                                   'finalDecode': job.final_decode if reason is None else 'whole',
+                                   'tailSeconds': round(job.tail_seconds, 2) if reason is None else None,
                                    'fallbackReason': reason.split(':')[0] if reason else None}
         response['timings'] = {'path': 'incremental' if reason is None else 'incremental-fallback',
                                'stopToFinalMs': round((done - stopped) * 1000),
                                'firstPartialMs': round((times['firstPartial'] - times['start']) * 1000) if 'firstPartial' in times else None,
-                               'windowInferenceMs': job.inference_ms[-20:]}
-        logging.info('Speech timing: stop to transcript %d ms (%s, %d windows)', response['timings']['stopToFinalMs'],
-                     response['timings']['path'], len(job.windows))
+                               'passInferenceMs': job.inference_ms[-20:]}
+        logging.info('Speech timing: stop to transcript %d ms (%s, %d passes, final %s)', response['timings']['stopToFinalMs'],
+                     response['timings']['path'], len(job.windows), response['incremental']['finalDecode'])
         return response
     finally:
         release_stream(job)

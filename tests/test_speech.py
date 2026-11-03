@@ -165,6 +165,7 @@ class SpeechBoundary(unittest.TestCase):
     def test_cuda_crash_relaunches_on_cpu(self):
         with patch.object(speech, 'speech_model_path', return_value=Path('x/models/large-v3')), \
                 patch.object(speech, 'speech_device', return_value='cuda'), \
+                patch.object(speech, 'engine_enabled', return_value=False), \
                 patch.object(speech.subprocess, 'Popen', side_effect=[self.crashed(), self.process({'text': 'نص', 'device': 'CPU', 'fallback': False})]) as launch:
             result = speech.transcribe(b'\x1aE\xdf\xa3fake', 'audio/webm')
         self.assertEqual([call.args[0][-1] for call in launch.call_args_list], ['cuda', 'cpu'])
@@ -226,10 +227,15 @@ class SpeechBoundary(unittest.TestCase):
             self.assertEqual(status, {'speechConfigured': True, 'speechModel': 'Whisper large-v3-turbo',
                                       'modelPath': str(owned), 'speechDevice': 'GPU', 'cpuOnly': False,
                                       'gpu': 'NVIDIA RTX', 'modelOwned': True, 'missingModel': None,
-                                      'incrementalDictation': False})
+                                      'incrementalDictation': True})     # on by default with a GPU
             speech.set_cpu_only(True)
             self.assertEqual(speech.status()['speechDevice'], 'CPU')
             self.assertTrue(speech.status()['cpuOnly'])
+            self.assertFalse(speech.status()['incrementalDictation'])           # a CPU cannot keep up with speech
+            speech.set_cpu_only(False)
+            speech.set_incremental(False)
+            self.assertFalse(speech.status()['incrementalDictation'])           # an explicit choice wins
+            speech.set_cpu_only(True)
 
     def test_status_without_model(self):
         with patch.dict(os.environ, {'HF_HUB_CACHE': str(paths.DATA / 'nocache')}):

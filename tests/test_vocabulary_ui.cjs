@@ -19,7 +19,7 @@ class Recorder{
 }
 const transcription={text:'عايز أعمل redesign ومش أغير login flow',rawText:'عايز أعمل ريدزاين ومش أغير اللوك فلو',
  replacements:[{heard:'ريدزاين',canonical:'redesign',replacement:'redesign'}],
- timings:{path:'incremental',stopToFinalMs:1230},incremental:{used:true,windows:3}};
+ timings:{path:'incremental',stopToFinalMs:1230},incremental:{used:true,passes:9,finalDecode:'none',tailSeconds:0}};
 const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,Set,JSON,encodeURIComponent,queueMicrotask,setTimeout,clearTimeout,MediaRecorder:Recorder,
  document:{getElementById:id=>nodes.get(id)||null,createElement:element,documentElement:{dataset:{}},addEventListener(){}},
  localStorage:{getItem(key){return storage.get(key)||'';},setItem(key,value){storage.set(key,value);}},
@@ -90,7 +90,7 @@ const count=url=>requests.filter(r=>r.url===url).length;
  assert.ok(nodes.get('notice').textContent.includes('Vocabulary: ريدزاين → redesign'),nodes.get('notice').textContent);
  assert.equal(nodes.get('stageStatus').hidden,false);
  assert.ok(nodes.get('stageStatus').textContent.includes('Transcript 1.2 s after Stop'),nodes.get('stageStatus').textContent);
- assert.ok(nodes.get('stageStatus').textContent.includes('3 windows while you spoke'));
+ assert.ok(nodes.get('stageStatus').textContent.includes('transcribed while you spoke'));
  // 3. Prompt preparation keeps the original source and shows the replaced form.
  await nodes.get('clearDraft').click();
  nodes.get('arabic').value='اعمل ريدزاين';await nodes.get('translate').click();await flush(6);

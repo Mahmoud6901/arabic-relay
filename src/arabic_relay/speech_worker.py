@@ -8,6 +8,7 @@ from ctypes import wintypes
 import io
 import json
 import os
+import re
 import struct
 import sys
 import threading
@@ -84,15 +85,20 @@ def checked_overrides(overrides):
     return checked
 
 
-def decode(model, samples, device, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None):
+def decode(model, samples, device, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None,
+           context=None, language=None):
     """One decode with the recognition settings the baseline uses for this mode.
 
-    `window` is an incremental-dictation window: serial decoding with word timestamps (needed to join windows),
-    otherwise the same options as a whole recording in the same writing mode.
+    `window` is a pass of processing during speech: serial decoding with word timestamps (needed to confirm words
+    across passes), otherwise the same options as a whole recording in the same writing mode. `context` is the
+    confirmed text before the pass's audio, given as the prompt so a trimmed pass continues it consistently.
+    A pass may reuse the `language` an earlier pass of the same recording detected: that skips a second encoder run
+    per pass. Each segment still detects its own language (multilingual decoding), so mixed Arabic and English is
+    read as before. Passes keep beam 5: greedy passes were faster but dropped words and a negation.
     """
     from faster_whisper import BatchedInferencePipeline
     hints = ', '.join(keywords) or None
-    options = dict(task='transcribe', language=None, multilingual=True, beam_size=5,
+    options = dict(task='transcribe', language=language if window else None, multilingual=True, beam_size=5,
                    vad_filter=not check, condition_on_previous_text=False,
                    initial_prompt=hints, hotwords=hints)
     options.update(checked_overrides(overrides))
@@ -102,6 +108,8 @@ def decode(model, samples, device, keywords, check=False, inline_mode=False, ret
         options.update(word_timestamps=True)
         if inline_mode:
             options.update(vad_filter=not retry, condition_on_previous_text=retry, initial_prompt=None)
+        if window and context:
+            options['initial_prompt'] = ' '.join(part for part in (options['initial_prompt'], context) if part)
         segments, info = model.transcribe(samples, **options)
         rows = segment_rows(segments)
         config = {'runtime': 'faster-whisper 1.2.1', 'task': 'transcribe', 'multilingual': True, 'language': None,
@@ -290,10 +298,11 @@ class Engine:
         list(segments)
         return round((time.monotonic() - started) * 1000)
 
-    def transcribe(self, samples, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None):
+    def transcribe(self, samples, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None,
+                   context=None, language=None):
         device, reason = self.device, None
         try:
-            value = decode(self.model, samples, device, keywords, check, inline_mode, retry, window, overrides)
+            value = decode(self.model, samples, device, keywords, check, inline_mode, retry, window, overrides, context, language)
         except ValueError:
             raise
         except Exception as error:
@@ -303,7 +312,8 @@ class Engine:
             if out_of_memory(error):
                 # Memory pressure is transient: keep the GPU model, run this request on a temporary CPU copy.
                 reason = 'oom'
-                value = decode(load_model(self.folder, 'cpu'), samples, 'cpu', keywords, check, inline_mode, retry, window, overrides)
+                value = decode(load_model(self.folder, 'cpu'), samples, 'cpu', keywords, check, inline_mode, retry, window,
+                               overrides, context, language)
             else:
                 # A device or driver fault: release the GPU model and stay on the CPU for this worker's lifetime.
                 reason = 'device'
@@ -311,7 +321,7 @@ class Engine:
                 self.model = load_model(self.folder, 'cpu')
                 self.device, self.fallback_reason = 'cpu', 'device'
                 self.send({'event': 'state', 'state': 'ready', 'device': 'cpu', 'fallbackReason': 'device'})
-                value = decode(self.model, samples, 'cpu', keywords, check, inline_mode, retry, window, overrides)
+                value = decode(self.model, samples, 'cpu', keywords, check, inline_mode, retry, window, overrides, context, language)
             device = 'cpu'
         fallback = self.requested == 'cuda' and device == 'cpu'
         return {**value, 'device': 'GPU' if device == 'cuda' else 'CPU', 'fallback': fallback,
@@ -345,6 +355,9 @@ def clean_overrides(value):
     return checked_overrides(value)
 
 
+LANGUAGE = re.compile(r'[a-z]{2,3}')
+
+
 def handle_request(engine, header, payload):
     if header.get('format') == 'pcm16':
         samples = pcm_samples(payload)
@@ -359,12 +372,18 @@ def handle_request(engine, header, payload):
     if header.get('retry') is True and len(samples) > 15 * 16000:
         raise ValueError('RETRY_TOO_LONG')
     window = header.get('window') is True
-    if window and len(samples) > 16 * 16000:
+    if window and len(samples) > 30 * 16000:
+        raise ValueError('INVALID_REQUEST')
+    context = header.get('context') or None
+    if context is not None and (not isinstance(context, str) or len(context) > 400 or not window):
+        raise ValueError('INVALID_REQUEST')
+    language = header.get('language')
+    if language is not None and (not window or not isinstance(language, str) or not LANGUAGE.fullmatch(language)):
         raise ValueError('INVALID_REQUEST')
     started = time.monotonic()
     result = engine.transcribe(samples, keywords, check=header.get('check') is True, inline_mode=header.get('inline') is True,
                                retry=header.get('retry') is True, window=window,
-                               overrides=clean_overrides(header.get('overrides')))
+                               overrides=clean_overrides(header.get('overrides')), context=context, language=language)
     return {**result, 'seconds': len(samples) / 16000, 'inferenceMs': round((time.monotonic() - started) * 1000)}
 
 

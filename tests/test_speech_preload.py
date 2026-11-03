@@ -13,7 +13,7 @@ class RecordingPreload(unittest.TestCase):
         proc=Mock(returncode=0)
         proc.poll.return_value=None
         proc.communicate.return_value=(json.dumps({'text':'same transcript','device':'GPU'}).encode(),b'')
-        with patch.object(speech,'speech_model_path',return_value=Path('model')), patch.object(speech,'speech_device',return_value='cuda'), patch.object(speech.subprocess,'Popen',return_value=proc) as launch:
+        with patch.object(speech,'speech_model_path',return_value=Path('model')), patch.object(speech,'speech_device',return_value='cuda'), patch.object(speech,'engine_enabled',return_value=False), patch.object(speech.subprocess,'Popen',return_value=proc) as launch:
             speech.prepare_worker('recording-test-1234567890')
             result=speech.run_worker(Path('model'),b'audio',[])
             self.assertEqual(result['text'],'same transcript')

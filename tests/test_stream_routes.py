@@ -126,7 +126,7 @@ class StreamRoutes(unittest.TestCase):
         with patch.object(speech, 'engine_request', request):
             body = self.post('/api/stream/finish', {'jobId': job, 'lastSeq': last, 'totalSamples': len(self.audio) // 2})[1]
         self.assertEqual(body['text'], 'whole recording')
-        self.assertEqual(body['incremental'], {'used': False, 'windows': 0, 'fallbackReason': 'failed'})
+        self.assertEqual(body['incremental'], {'used': False, 'passes': 0, 'finalDecode': 'whole', 'tailSeconds': None, 'fallbackReason': 'failed'})
         self.assertEqual(whole, [({'format': 'pcm16', 'keywords': []}, len(self.audio))])
         self.assertFalse(speech.TRANSCRIBE_LOCK.locked())
 
