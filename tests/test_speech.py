@@ -222,6 +222,7 @@ class SpeechBoundary(unittest.TestCase):
                 patch.object(models, 'gpu_runtime_dir', return_value=Path('runtime')):
             status = speech.status()
             self.assertEqual(status.pop('engine')['state'], 'stopped')
+            self.assertEqual(status.pop('engineSettings')['idleSeconds'], 300)
             self.assertEqual(status, {'speechConfigured': True, 'speechModel': 'Whisper large-v3-turbo',
                                       'modelPath': str(owned), 'speechDevice': 'GPU', 'cpuOnly': False,
                                       'gpu': 'NVIDIA RTX', 'modelOwned': True, 'missingModel': None,

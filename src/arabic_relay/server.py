@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, direct_sessions, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
+from . import __version__, aliases, direct_sessions, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
 from . import inline
 
 ROOT = paths.ROOT
@@ -105,6 +105,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(firstrun.JOB.progress())
             if path.path == '/api/vocabulary':
                 return self.respond(store.personal_vocabulary())
+            if path.path == '/api/aliases':
+                return self.respond(aliases.listing())
             return self.respond({'error': 'Not found'}, 404)
         except Exception as error:
             self.fail(error)
@@ -163,6 +165,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(speech.stream_cancel(body.get('jobId')))
             if self.path == '/api/incremental':
                 return self.respond(speech.set_incremental(body.get('enabled')))
+            if self.path == '/api/engine':
+                return self.respond(speech.set_engine_settings(body.get('idleSeconds'), body.get('prewarm'),
+                                                               body.get('retryGpu') is True))
             if self.path == '/api/wispr/open':
                 return self.respond(speech.open_wispr_flow())
             if self.path == '/api/whisper-model':
@@ -201,6 +206,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(inline.cancel(body.get('requestId')))
             if self.path == '/api/inline/validate':
                 return self.respond(inline.manual(body))
+            if self.path == '/api/aliases/add':
+                return self.respond(aliases.add(body.get('heard'), body.get('canonical'), body.get('provenance', 'user')))
+            if self.path == '/api/aliases/update':
+                return self.respond(aliases.update(body.get('id'), body.get('heard'), body.get('canonical'), body.get('enabled')))
+            if self.path == '/api/aliases/delete':
+                return self.respond(aliases.delete(body.get('id')))
+            if self.path == '/api/aliases/apply':
+                return self.respond(aliases.apply(body.get('text')))
             if self.path == '/api/forget-vocabulary':
                 return self.respond(store.forget_vocabulary())
             if self.path == '/api/self-learning':

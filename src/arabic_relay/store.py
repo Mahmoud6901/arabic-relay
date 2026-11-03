@@ -29,6 +29,12 @@ def database(vocabulary=False):
                 db.execute('BEGIN IMMEDIATE')
                 db.execute('CREATE TABLE IF NOT EXISTS learned.vocabulary (word TEXT PRIMARY KEY, uses INTEGER NOT NULL, updated REAL NOT NULL)')
                 db.execute('CREATE TABLE IF NOT EXISTS learned.corrections (heard TEXT PRIMARY KEY, spelling TEXT NOT NULL, updated REAL NOT NULL)')
+                # Approved replacement rules (schema 2). Additive: learned words and corrections are never touched.
+                db.execute('CREATE TABLE IF NOT EXISTS learned.aliases (id INTEGER PRIMARY KEY, heard TEXT NOT NULL UNIQUE, '
+                           'canonical TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, scope TEXT NOT NULL DEFAULT \'global\', '
+                           'provenance TEXT NOT NULL, approved REAL NOT NULL, updated REAL NOT NULL)')
+                if db.execute('PRAGMA learned.user_version').fetchone()[0] < 2:
+                    db.execute('PRAGMA learned.user_version = 2')
                 for table, key, values in [('vocabulary', 'word', 'uses=excluded.uses, updated=excluded.updated'),
                                            ('corrections', 'heard', 'spelling=excluded.spelling, updated=excluded.updated')]:
                     if db.execute("SELECT 1 FROM main.sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():

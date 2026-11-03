@@ -56,7 +56,35 @@ def segment_rows(segments):
     return rows
 
 
-def decode(model, samples, device, keywords, check=False, inline_mode=False, retry=False, window=False):
+OVERRIDES = {'beam_size': (1, 10), 'language': None, 'multilingual': None, 'vad_filter': None,
+             'vad_parameters': None, 'condition_on_previous_text': None}
+
+
+def checked_overrides(overrides):
+    """Measurement-only decoding choices, strictly bounded; anything unknown is refused."""
+    if overrides in (None, {}):
+        return {}
+    if not isinstance(overrides, dict) or not set(overrides) <= set(OVERRIDES):
+        raise ValueError('INVALID_REQUEST')
+    checked = {}
+    for key, value in overrides.items():
+        if key == 'beam_size':
+            if type(value) is not int or not 1 <= value <= 10:
+                raise ValueError('INVALID_REQUEST')
+        elif key == 'language':
+            if value is not None and (not isinstance(value, str) or not 2 <= len(value) <= 3):
+                raise ValueError('INVALID_REQUEST')
+        elif key in ('multilingual', 'vad_filter', 'condition_on_previous_text'):
+            if type(value) is not bool:
+                raise ValueError('INVALID_REQUEST')
+        elif key == 'vad_parameters':
+            if not isinstance(value, dict) or not set(value) <= {'speech_pad_ms', 'min_silence_duration_ms'}                     or any(type(v) is not int or not 0 <= v <= 5000 for v in value.values()):
+                raise ValueError('INVALID_REQUEST')
+        checked[key] = value
+    return checked
+
+
+def decode(model, samples, device, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None):
     """One decode with the recognition settings the baseline uses for this mode.
 
     `window` is an incremental-dictation window: serial decoding with word timestamps (needed to join windows),
@@ -67,6 +95,7 @@ def decode(model, samples, device, keywords, check=False, inline_mode=False, ret
     options = dict(task='transcribe', language=None, multilingual=True, beam_size=5,
                    vad_filter=not check, condition_on_previous_text=False,
                    initial_prompt=hints, hotwords=hints)
+    options.update(checked_overrides(overrides))
     if inline_mode or window:
         if inline_mode and not model.model.is_multilingual:
             raise ValueError('MULTILINGUAL_REQUIRED')
@@ -80,17 +109,24 @@ def decode(model, samples, device, keywords, check=False, inline_mode=False, ret
                   'wordTimestamps': True, 'sampleRate': 16000, 'beamSize': 5, 'vad': options['vad_filter'],
                   'conditionOnPreviousText': options['condition_on_previous_text'],
                   'device': device, 'computeType': compute_type(device)}
-        return {'text': ''.join(row['text'] for row in rows), 'segments': rows, 'effectiveAsrConfig': config}
-    if device == 'cuda' and not check and len(samples) >= 45 * 16000:
+        return {'text': ''.join(row['text'] for row in rows), 'segments': rows,
+                'effectiveAsrConfig': {**config, 'beamSize': options['beam_size'], 'language': options['language'],
+                                       'vad': options['vad_filter'], 'hints': hints},
+                'effectiveOptions': {key: options[key] for key in ('beam_size', 'language', 'multilingual', 'vad_filter',
+                                                                  'condition_on_previous_text', 'hotwords')}}
+    # The batched pipeline needs VAD (or explicit clip timestamps); without VAD, decode serially.
+    if device == 'cuda' and not check and options['vad_filter'] and len(samples) >= 45 * 16000:
         try:
             segments, _ = BatchedInferencePipeline(model=model).transcribe(samples, batch_size=2, **options)
-            return {'text': ''.join(segment.text for segment in segments).strip()}
+            return {'text': ''.join(segment.text for segment in segments).strip(),
+                    'effectiveOptions': {key: options[key] for key in ('beam_size', 'language', 'vad_filter', 'hotwords')}}
         except RuntimeError as error:
             if not out_of_memory(error):
                 raise
             # Retry serially on this GPU before considering the much slower CPU fallback.
     segments, _ = model.transcribe(samples, **options)
-    return {'text': ''.join(segment.text for segment in segments).strip()}
+    return {'text': ''.join(segment.text for segment in segments).strip(),
+            'effectiveOptions': {key: options[key] for key in ('beam_size', 'language', 'vad_filter', 'hotwords')}}
 
 
 def run_model(samples, folder, device, keywords, check=False, inline_mode=False, retry=False, loaded_model=None):
@@ -254,10 +290,10 @@ class Engine:
         list(segments)
         return round((time.monotonic() - started) * 1000)
 
-    def transcribe(self, samples, keywords, check=False, inline_mode=False, retry=False, window=False):
+    def transcribe(self, samples, keywords, check=False, inline_mode=False, retry=False, window=False, overrides=None):
         device, reason = self.device, None
         try:
-            value = decode(self.model, samples, device, keywords, check, inline_mode, retry, window)
+            value = decode(self.model, samples, device, keywords, check, inline_mode, retry, window, overrides)
         except ValueError:
             raise
         except Exception as error:
@@ -267,7 +303,7 @@ class Engine:
             if out_of_memory(error):
                 # Memory pressure is transient: keep the GPU model, run this request on a temporary CPU copy.
                 reason = 'oom'
-                value = decode(load_model(self.folder, 'cpu'), samples, 'cpu', keywords, check, inline_mode, retry, window)
+                value = decode(load_model(self.folder, 'cpu'), samples, 'cpu', keywords, check, inline_mode, retry, window, overrides)
             else:
                 # A device or driver fault: release the GPU model and stay on the CPU for this worker's lifetime.
                 reason = 'device'
@@ -275,7 +311,7 @@ class Engine:
                 self.model = load_model(self.folder, 'cpu')
                 self.device, self.fallback_reason = 'cpu', 'device'
                 self.send({'event': 'state', 'state': 'ready', 'device': 'cpu', 'fallbackReason': 'device'})
-                value = decode(self.model, samples, 'cpu', keywords, check, inline_mode, retry, window)
+                value = decode(self.model, samples, 'cpu', keywords, check, inline_mode, retry, window, overrides)
             device = 'cpu'
         fallback = self.requested == 'cuda' and device == 'cpu'
         return {**value, 'device': 'GPU' if device == 'cuda' else 'CPU', 'fallback': fallback,
@@ -305,6 +341,10 @@ def process_memory():
             'peakWorkingSet': counters.PeakWorkingSetSize}
 
 
+def clean_overrides(value):
+    return checked_overrides(value)
+
+
 def handle_request(engine, header, payload):
     if header.get('format') == 'pcm16':
         samples = pcm_samples(payload)
@@ -323,7 +363,8 @@ def handle_request(engine, header, payload):
         raise ValueError('INVALID_REQUEST')
     started = time.monotonic()
     result = engine.transcribe(samples, keywords, check=header.get('check') is True, inline_mode=header.get('inline') is True,
-                               retry=header.get('retry') is True, window=window)
+                               retry=header.get('retry') is True, window=window,
+                               overrides=clean_overrides(header.get('overrides')))
     return {**result, 'seconds': len(samples) / 16000, 'inferenceMs': round((time.monotonic() - started) * 1000)}
 
 

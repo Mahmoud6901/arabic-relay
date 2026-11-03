@@ -16,7 +16,7 @@ import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import engine_host, incremental, locate, models, paths, store
+from . import aliases, engine_host, incremental, locate, models, paths, store
 
 
 TRANSCRIBE_LOCK = threading.Lock()
@@ -116,10 +116,82 @@ def set_whisper_model(folder):
     return {'speechConfigured': True, 'modelPath': str(model)}
 
 
+def gpu_backoff():
+    """Bounded failure memory for Auto device choice, keyed by device and driver."""
+    try:
+        saved = json.loads(store.get_setting('gpu_backoff') or 'null')
+    except ValueError:
+        return None
+    if not isinstance(saved, dict) or not isinstance(saved.get('until'), (int, float)):
+        return None
+    gpu = models.gpu_info() or {}
+    if saved.get('driver') != gpu.get('driver') or saved.get('name') != gpu.get('name'):
+        return None                                  # a different device or driver starts clean
+    return saved if saved['until'] > time.time() else None
+
+
+def record_gpu_failure(reason, key=None):
+    """A device or driver fault suspends Auto GPU use for a while; a transient OOM never does."""
+    if reason not in ('device', 'load'):
+        return
+    gpu = models.gpu_info() or {}
+    previous = gpu_backoff() or {}
+    count = int(previous.get('count', 0)) + 1
+    minutes = 30 if count == 1 else 120 if count == 2 else 1440
+    store.set_setting('gpu_backoff', json.dumps({'name': gpu.get('name'), 'driver': gpu.get('driver'), 'count': count,
+                                                 'until': int(time.time() + minutes * 60)}))
+    logging.warning('Auto GPU use suspended for %d minutes after a device failure', minutes)
+
+
+def clear_gpu_backoff():
+    store.set_setting('gpu_backoff', '')
+    return {'gpuBackoff': None}
+
+
 def speech_device():
     if store.get_setting('speech_device') == 'cpu' or models.gpu_info() is None or models.gpu_runtime_dir() is None:
         return 'cpu'
-    return 'cuda'
+    return 'cpu' if gpu_backoff() else 'cuda'
+
+
+def engine_settings():
+    return {'idleSeconds': int(store.get_setting('engine_idle_seconds', 300) or 0),
+            'prewarm': bool(store.get_setting('engine_prewarm', 0)), 'gpuBackoff': gpu_backoff()}
+
+
+def set_engine_settings(idle_seconds=None, prewarm=None, retry_gpu=False):
+    if idle_seconds is not None:
+        if type(idle_seconds) is not int or idle_seconds not in (0, 300, 900, 3600):
+            raise ValueError('Choose how long the speech model stays loaded.')
+        store.set_setting('engine_idle_seconds', idle_seconds)
+        engine_host.HOST.watch(idle_seconds)
+    if prewarm is not None:
+        if type(prewarm) is not bool:
+            raise ValueError('Choose whether to warm the speech model at launch.')
+        store.set_setting('engine_prewarm', int(prewarm))
+    if retry_gpu:
+        clear_gpu_backoff()
+    return engine_settings()
+
+
+def prewarm():
+    """Optional: load and warm while the window opens. Never blocks the interface."""
+    settings = engine_settings()
+    if not settings['prewarm'] or not incremental_enabled():
+        return
+    folder = speech_model_path()
+    if folder is None:
+        return
+    threading.Thread(target=lambda: _prewarm(str(folder)), daemon=True, name='relay-prewarm').start()
+
+
+def _prewarm(folder):
+    try:
+        engine_host.HOST.watch(engine_settings()['idleSeconds'])
+        engine_host.HOST.ensure(folder, speech_device())
+        engine_host.HOST.wait_ready(600)
+    except Exception:
+        logging.info('Speech model prewarm did not finish; the first recording loads it')
 
 
 def set_cpu_only(enabled):
@@ -157,7 +229,8 @@ def status():
             'modelPath': str(model) if model else None, 'speechDevice': 'GPU' if speech_device() == 'cuda' else 'CPU',
             'cpuOnly': store.get_setting('speech_device') == 'cpu', 'gpu': gpu['name'] if gpu else None,
             'modelOwned': model is not None and models.app_owned(model), 'missingModel': missing_model(),
-            'incrementalDictation': incremental_enabled(), 'engine': engine_host.HOST.status()}
+            'incrementalDictation': incremental_enabled(), 'engine': engine_host.HOST.status(),
+            'engineSettings': engine_settings()}
 
 
 def open_wispr_flow():
@@ -276,7 +349,7 @@ def transcribe_cohere(audio, kind):
                 text = ' '.join(pool.map(lambda clip: cohere_request(clip, key), clips)).strip()
             finally:
                 pool.shutdown(wait=True, cancel_futures=True)
-        return transcript_result(text, COHERE_MODEL)
+        return apply_aliases(transcript_result(text, COHERE_MODEL))
     finally:
         TRANSCRIBE_LOCK.release()
 
@@ -361,8 +434,25 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
     return response
 
 
+def apply_aliases(response):
+    """Approved vocabulary rules replace finalized speech text; the recognition output stays in rawText."""
+    try:
+        applied = aliases.apply(response.get('text') or '')
+    except ValueError:
+        return response                 # over-long text is validated elsewhere; never fail a transcript here
+    response['text'] = applied['text']
+    if applied['replacements']:
+        response['replacements'] = applied['replacements']
+        if response.get('originalText') is not None:
+            response['originalText'] = response.get('rawText', '')
+    if applied['conflicts']:
+        response['aliasConflicts'] = applied['conflicts']
+    return response
+
+
 def whisper_response(result, folder, inline_mode):
     response = transcript_result(result.get('text'), models.model_label(folder))
+    apply_aliases(response)
     response['device'] = result.get('device', 'GPU')
     if inline_mode:
         response.update(segments=result.get('segments', []), seconds=result.get('seconds'),
@@ -419,6 +509,8 @@ def engine_request(key, header, payload, timeout=300, cancel_event=None):
                 logging.error('Speech engine stopped on the GPU; retrying this recording on the CPU')
                 continue
             raise ValueError(WORKER_MESSAGES.get(error.code, WORKER_FAILED)) from None
+        if result.get('fallbackReason') in ('device', 'oom'):
+            record_gpu_failure('device' if result['fallbackReason'] == 'device' else 'oom')
         if launched != device:
             result['fallback'] = True
         return result
@@ -439,11 +531,16 @@ def release_stream(job):
     incremental.REGISTRY.release(job)
 
 
+def _stream_released(job):
+    engine_host.HOST.release_hold()
+    TRANSCRIBE_LOCK.release()
+
+
 def expire_streams():
     incremental.REGISTRY.expire()
 
 
-incremental.REGISTRY.on_release = lambda job: TRANSCRIBE_LOCK.release()
+incremental.REGISTRY.on_release = _stream_released
 
 
 def stream_start(job_id, inline_mode=False, vocabulary=''):
@@ -461,12 +558,16 @@ def stream_start(job_id, inline_mode=False, vocabulary=''):
         return {'accepted': False, 'reason': 'busy'}
     try:
         key = (str(folder), speech_device())
+        engine_host.HOST.watch(engine_settings()['idleSeconds'])
+        engine_host.HOST.hold()
         engine_host.HOST.ensure(*key)
         job = incremental.REGISTRY.start(job_id, lambda: incremental.Job(job_id, inline_mode, keywords, key, window_transcriber(key)))
     except BaseException:
+        engine_host.HOST.release_hold()
         TRANSCRIBE_LOCK.release()
         raise
     if job is None:
+        engine_host.HOST.release_hold()
         TRANSCRIBE_LOCK.release()
         return {'accepted': False, 'reason': 'busy'}
     return {'accepted': True, 'engine': engine_host.HOST.status()}

@@ -45,8 +45,11 @@ class EngineHost:
         self.ready_at = None
         self.stderr_tail = collections.deque(maxlen=40)
         self.ids = itertools.count(1)
-        self.holds = 0                         # recordings that keep the model loaded (idle release waits)
         self.memory = []                       # (requests, private bytes) after each request, newest last
+        self.baseline_memory = None            # private bytes once the model is ready
+        self.idle_seconds = 0                  # 0 keeps the model loaded until the app quits
+        self.holds = 0                         # recordings that keep the model loaded (idle release waits)
+        self.watchdog = None
 
     # --- lifecycle -------------------------------------------------------------------------------------------
 
@@ -167,6 +170,7 @@ class EngineHost:
                             self.info[key] = event[key]
                     if state == 'ready' and self.ready_at is None:
                         self.ready_at = time.monotonic()
+                        self.baseline_memory = (self.info.get('memory') or {}).get('privateBytes')
                         logging.info('Speech engine ready: load %s ms, warm-up %s ms, %s', self.info.get('loadMs'),
                                      self.info.get('warmMs'), self.info.get('device'))
                     if state in ('ready', 'failed'):
@@ -252,6 +256,54 @@ class EngineHost:
 
     def busy(self):
         return self.request_lock.locked()
+
+    # --- idle release and memory -----------------------------------------------------------------------------
+
+    def hold(self):
+        with self.lock:
+            self.holds += 1
+
+    def release_hold(self):
+        with self.lock:
+            self.holds = max(0, self.holds - 1)
+            self.last_used = time.monotonic()
+
+    def growth(self):
+        """Private bytes above the memory measured once the model was ready, or None."""
+        with self.lock:
+            memory = (self.info.get('memory') or {}).get('privateBytes')
+            if not memory or not self.baseline_memory:
+                return None
+            return memory / self.baseline_memory - 1
+
+    def watch(self, idle_seconds=None):
+        """Release the model after `idle_seconds` without work; never while a recording or request is active."""
+        with self.lock:
+            if idle_seconds is not None:
+                self.idle_seconds = max(0, int(idle_seconds))
+            if self.watchdog is None or not self.watchdog.is_alive():
+                self.watchdog = threading.Thread(target=self._watch, daemon=True, name='relay-engine-idle')
+                self.watchdog.start()
+        return self.idle_seconds
+
+    def _watch(self):
+        while True:
+            time.sleep(5)
+            with self.lock:
+                idle = time.monotonic() - self.last_used
+                ready = self.state in READY_STATES
+                limit = self.idle_seconds
+                holds = self.holds
+            if not ready or limit <= 0 or holds or self.request_lock.locked():
+                continue
+            grown = self.growth()
+            if grown is not None and grown > .25 and self.requests >= 4:
+                logging.info('Speech engine recycled after memory growth of %d%%', round(grown * 100))
+                self.retire()
+                continue
+            if idle >= limit:
+                logging.info('Speech engine released after %d s idle', round(idle))
+                self.retire()
 
     def status(self):
         with self.lock:

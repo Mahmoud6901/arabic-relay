@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 
-from . import locate, paths, store, translators
+from . import aliases, locate, paths, store, translators
 
 
 TRANSLATE_LOCK = threading.Lock()
@@ -356,11 +356,17 @@ def translate(arabic, original=''):
     if not isinstance(original, str) or len(original) > 12000:
         raise ValueError('The original transcript must be under 12,000 characters.')
     notices = []
-    result = {'english': codex_text({'dictation': arabic}, SYSTEM_PROMPT, notices)}
+    # Approved vocabulary rules apply to the finalized source before preparation; the original is preserved.
+    applied = aliases.apply(arabic)
+    result = {'english': codex_text({'dictation': applied['text']}, SYSTEM_PROMPT, notices)}
+    if applied['replacements']:
+        result.update(replacements=applied['replacements'], originalSource=applied['original'])
+    if applied['conflicts']:
+        result['aliasConflicts'] = applied['conflicts']
     if notices:
         result['notice'] = notices[0]
     try:
-        result['vocabulary'] = store.learn_vocabulary(arabic, original)
+        result['vocabulary'] = store.learn_vocabulary(applied['text'], original or applied['original'])
         result['selfLearning'] = store.self_learning_enabled()
     except sqlite3.Error:
         result['learningError'] = 'The English draft is ready, but personal vocabulary could not be saved.'

@@ -240,6 +240,7 @@ def run():
                              width=1380, height=940, min_size=(760, 650),
                              background_color='#000000', text_select=True)
         window.events.closed += capture.stop
+        window.events.loaded += speech.prewarm   # only when the user asked for it; never blocks the window
         webview.start(capture.hotkey.start, gui='edgechromium', private_mode=False,
                       storage_path=str(paths.DATA / 'NativeWebView'), icon=str(server.ROOT / 'assets/relay.ico'))
     finally:

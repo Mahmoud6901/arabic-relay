@@ -36,7 +36,7 @@ class VocabularyLearning(unittest.TestCase):
         with closing(store.sqlite3.connect(paths.DATA / 'vocabulary.sqlite3')) as db:
             self.assertEqual(db.execute('SELECT * FROM vocabulary').fetchall(), [('React', 7, 123.5)])
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                             {'vocabulary', 'corrections'})
+                             {'vocabulary', 'corrections', 'aliases'})  # aliases arrive with schema version 2
         with store.database() as db:
             self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name IN ('vocabulary', 'corrections')").fetchone())
         store.forget_vocabulary()
