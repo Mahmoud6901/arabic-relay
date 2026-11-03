@@ -268,7 +268,7 @@ Prepare it from your words, or paste your own draft." maxlength="16000"></textar
 <p class="learning-help">A rule replaces one heard Arabic form with your English spelling, every time it appears as a whole word. Only rules you approve change your text; learned corrections stay proposals. Rules never train the speech model.</p>
 <div id="aliasList" class="alias-list"></div>
 <div id="aliasProposals" class="alias-list"></div>
-<div class="dictation-options alias-form"><label for="aliasHeard">Heard form</label><input class="voice-terms" id="aliasHeard" maxlength="80" placeholder="ريدزاين" aria-describedby="aliasStatus"><label for="aliasCanonical">English spelling</label><input class="voice-terms" id="aliasCanonical" maxlength="80" placeholder="redesign"><button class="btn" id="aliasAdd">Add rule</button></div>
+<div class="dictation-options alias-form"><label for="aliasHeard">Heard form</label><input class="voice-terms" id="aliasHeard" maxlength="80" placeholder="ريدزاين" aria-describedby="aliasStatus"><label for="aliasCanonical">English spelling</label><input class="voice-terms" id="aliasCanonical" maxlength="80" placeholder="redesign"><button class="btn" id="aliasAdd">Add rule</button><button class="text-btn" id="aliasCancelEdit" hidden>Cancel editing</button></div>
 <p class="learning-help" id="aliasStatus" role="status">Loading rules…</p>
 </details></div></section>
  <section class="settings-section" id="aboutSettings"><h3>About</h3><p id="appVersion">Arabic Relay</p><div class="dictation-options"><label for="updateMode">Updates</label><select id="updateMode"><option value="auto">Automatic</option><option value="notify">Notify only</option><option value="off">Off</option></select></div><label class="learning-choice"><input id="installOnQuit" type="checkbox" checked>Install updates automatically when I quit</label><button class="btn" id="copyDiagnostics">Copy diagnostics</button><p class="dictation-help">Versions, GPU and tool paths for a GitHub issue. No transcripts or audio.</p></section>
@@ -294,7 +294,7 @@ let dictationProvider='whisper',wisprFlowInstalled=false,cohereConfigured=false,
 try{const saved=localStorage.getItem('relay-dictation-provider');if(['wispr','cohere'].includes(saved))dictationProvider=saved;}catch{}
 let incrementalEnabled=false,liveStream=null,liveFinishing=null,stageTimes={};
 let engineSettings={idleSeconds:300,prewarm:false,gpuBackoff:null};
-let aliasRules=[],aliasProposals=[],stageTick=0,stageBegin=0,stageLabel='',jobGeneration=0,inlineAliasChanges='';
+let aliasRules=[],aliasProposals=[],aliasEditing=null,stageTick=0,stageBegin=0,stageLabel='',jobGeneration=0,inlineAliasChanges='';
 const clock=()=>globalThis.performance?.now?.()??Date.now();
 let live=false, sent=false, nativeDesktop=false, speechConfigured=false, recorder=null, audioStream=null, audioBlob=null, audioUrl=null, recordTimer=null, discardAudio=false;
 function notice(message,success=false){$('notice').textContent=message;$('notice').className='notice show'+(success?' success':'');if(quickCapture&&!success&&!listening)quickFailure=true;updateQuickSurface();}
@@ -342,7 +342,7 @@ for(const id of ['arabic','english'])$(id).addEventListener('input',()=>{if(id==
 $('example').addEventListener('click',()=>{if(listening)return;learningOriginal='';$('originalSpeech').style.display='none';$('arabic').value='راجع صفحة تسجيل الدخول، وحسّن رسائل الخطأ عشان تكون واضحة للمستخدم. ما تغيّرش طريقة تسجيل الدخول الحالية، واتأكد إن الصفحة بتشتغل كويس على الموبايل.';invalidate();$('arabic').focus();});
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('english').value);notice('English prompt copied.',true);}catch{notice('Select the English prompt and copy it with Ctrl+C.');}});
 $('clearDraft').addEventListener('click',()=>{if(busy||listening)return;pasteArmed=false;clearTimeout(quickTimer);quickTimer=null;resetInline();$('arabic').value='';$('english').value='';learningOriginal='';recognitionBase='';clearAudio();$('originalSpeechText').textContent='';$('originalSpeech').style.display='none';$('originalSpeech').open=false;$('deliveries').classList.remove('show');$('deliveryList').innerHTML='';invalidate();renderProjects();notice('Draft cleared. Start speaking or type a new prompt.',true);$('arabic').focus();});
-$('translate').addEventListener('click',async()=>{if(inlineMode())return prepareInline();const arabic=$('arabic').value;if(!arabic.trim())return;busy=true;invalidate();renderProjects();$('translate').textContent='Crafting your English prompt…';const generation=++jobGeneration;stage('Preparing English prompt');try{const r=await api('/api/translate',{arabic,original:learningOriginal});if(generation!==jobGeneration)return;if(r.replacements&&r.replacements.length&&!learningOriginal)learningOriginal=arabic;stageDone('Prompt ready');$('english').value=r.english;if(r.vocabulary)showVocabulary(r.vocabulary);notice(r.learningError||(r.selfLearning===false?'English prompt crafted. Self-learning is off; no new vocabulary was saved. The draft is ready for copying or automatic paste.':'English prompt crafted and personal vocabulary saved. The English prompt is ready. Shortcut recordings paste automatically into the original app.'),!r.learningError);if(r.notice)notice(r.notice+' The English draft is ready to review.',true);}catch(e){notice(e.message);}finally{busy=false;update();renderProjects();$('translate').innerHTML=icon('spark')+'Prepare English prompt '+icon('arrow');}});
+$('translate').addEventListener('click',async()=>{if(inlineMode())return prepareInline();const arabic=$('arabic').value;if(!arabic.trim())return;busy=true;invalidate();renderProjects();$('translate').textContent='Crafting your English prompt…';const generation=++jobGeneration;freshPromptTimes();stage('Preparing English prompt');mark('promptStart');try{const r=await api('/api/translate',{arabic,original:learningOriginal});if(generation!==jobGeneration)return;if(r.replacements&&r.replacements.length&&!learningOriginal)learningOriginal=arabic;mark('prompt');stageDone('Prompt ready · '+timingSummary('prompt'));$('english').value=r.english;if(r.vocabulary)showVocabulary(r.vocabulary);notice(r.learningError||(r.selfLearning===false?'English prompt crafted. Self-learning is off; no new vocabulary was saved. The draft is ready for copying or automatic paste.':'English prompt crafted and personal vocabulary saved. The English prompt is ready. Shortcut recordings paste automatically into the original app.'),!r.learningError);if(r.notice)notice(r.notice+' The English draft is ready to review.',true);}catch(e){stageTimes.chain=false;if(generation===jobGeneration)stageDone('Prompt preparation failed after '+seconds(clock()-stageTimes.promptStart));notice(e.message);}finally{busy=false;update();renderProjects();$('translate').innerHTML=icon('spark')+'Prepare English prompt '+icon('arrow');}});
 async function beginPasteCapture(){
  pasteArmed=false;pasteInputReceived=false;captureId=null;
  if(!quickCapture||!window.pywebview?.api.begin_capture)return;
@@ -353,12 +353,13 @@ async function beginPasteCapture(){
 function maybeAutoPaste(){
  if(!quickCapture||!nativeDesktop||!pasteArmed||!pasteInputReceived||pastePending||busy||listening||quickTimer||quickComposing||inlineTimer||inlinePendingId||inlineComposing)return;
  if(!$('english').value.trim()||(inlineMode()&&!inlineSendable()))return;
- pasteArmed=false;queueMicrotask(()=>pastePrepared());
+ pasteArmed=false;queueMicrotask(()=>pastePrepared(true));
 }
-async function pastePrepared(){
+async function pastePrepared(auto){
  if(busy||listening||pastePending||sent||!captureId||!$('english').value.trim()||quickTimer||inlineTimer||inlinePendingId)return;
  if(inlineMode()&&!inlineSendable())return;
- pasteArmed=false;pastePending=true;busy=true;stage('Paste requested');
+ if(auto!==true)stageTimes.chain=false;     // a paste the user asked for later is timed on its own
+ pasteArmed=false;pastePending=true;busy=true;stage('Requesting paste');mark('pasteStart');
  const current={english:$('english').value,captureId};
  if(inlineMode()){current.mode='inline';current.inlineRevision=inlineRevision;}
  update();
@@ -372,9 +373,10 @@ async function pastePrepared(){
   }
   const result=await window.pywebview.api.paste_to_target(current,csrf);
   if(result.status!=='paste_requested')throw new Error('Paste was not confirmed. Check the app before copying again.');
+  mark('paste');stageDone('Paste requested · '+timingSummary('paste'));
   sent=true;clearAudio();notice(result.message,true);
   await window.pywebview.api.finish_paste(current.captureId,csrf);
- }catch(e){quickFailure=true;quickReview=true;quickFlowCapturing=false;notice(e.message+' Your prompt is ready to copy.');}
+ }catch(e){stageDone('Paste not requested');quickFailure=true;quickReview=true;quickFlowCapturing=false;notice(e.message+' Your prompt is ready to copy.');}
  finally{busy=false;pastePending=false;update();}
 }
 $('send').addEventListener('click',pastePrepared);
@@ -412,13 +414,19 @@ $('engineIdle').addEventListener('change',()=>saveEngineSettings({idleSeconds:Nu
 $('enginePrewarm').addEventListener('change',()=>saveEngineSettings({prewarm:$('enginePrewarm').checked}));
 $('retryGpu').addEventListener('click',()=>saveEngineSettings({retryGpu:true}));
 $('incrementalDictation').addEventListener('change',async()=>{if(busy||listening){update();return;}const enabled=$('incrementalDictation').checked;busy=true;update();try{const result=await api('/api/incremental',{enabled});incrementalEnabled=result.incrementalDictation===true;notice(incrementalEnabled?'Processing during speech is on for Local Whisper. A provisional transcript appears while you talk.':'Processing during speech is off. Recordings are transcribed after Stop.',true);}catch(e){notice(e.message);}finally{busy=false;update();}});
+function aliasEdit(rule){aliasEditing=rule?rule.id:null;$('aliasHeard').value=rule?rule.heard:'';$('aliasCanonical').value=rule?rule.canonical:'';
+ $('aliasAdd').textContent=rule?'Save rule':'Add rule';$('aliasCancelEdit').hidden=!rule;if(rule)$('aliasHeard').focus();}
 $('aliasAdd').addEventListener('click',async()=>{const heard=$('aliasHeard').value.trim(),canonical=$('aliasCanonical').value.trim();
  if(!heard||!canonical){notice('Enter the heard Arabic form and the English spelling.');return;}
- await aliasAction('/api/aliases/add',{heard,canonical});
- if(aliasRules.some(r=>r.heard===heard)){$('aliasHeard').value='';$('aliasCanonical').value='';}});
-$('aliasList').addEventListener('click',event=>{const toggle=event.target.closest('[data-alias-toggle]'),remove=event.target.closest('[data-alias-delete]');
- if(toggle)aliasAction('/api/aliases/update',{id:Number(toggle.dataset.aliasToggle),enabled:toggle.checked});
- else if(remove)aliasAction('/api/aliases/delete',{id:Number(remove.dataset.aliasDelete)});});
+ const editing=aliasEditing;
+ if(editing!==null&&!aliasRules.some(r=>r.id===editing)){aliasEdit(null);notice('That vocabulary rule no longer exists.');return;}
+ const ok=await aliasAction(editing!==null?'/api/aliases/update':'/api/aliases/add',editing!==null?{id:editing,heard,canonical}:{heard,canonical});
+ if(ok)aliasEdit(null);});
+$('aliasCancelEdit').addEventListener('click',()=>aliasEdit(null));
+$('aliasList').addEventListener('click',event=>{const toggle=event.target.closest('[data-alias-toggle]'),remove=event.target.closest('[data-alias-delete]'),edit=event.target.closest('[data-alias-edit]');
+ if(edit)aliasEdit(aliasRules.find(r=>r.id===Number(edit.dataset.aliasEdit))||null);
+ else if(toggle)aliasAction('/api/aliases/update',{id:Number(toggle.dataset.aliasToggle),enabled:toggle.checked});
+ else if(remove){if(aliasEditing===Number(remove.dataset.aliasDelete))aliasEdit(null);aliasAction('/api/aliases/delete',{id:Number(remove.dataset.aliasDelete)});}});
 $('aliasProposals').addEventListener('click',event=>{const approve=event.target.closest('[data-alias-approve]');
  if(approve)aliasAction('/api/aliases/add',{heard:approve.dataset.aliasApprove,canonical:approve.dataset.aliasCanonical,provenance:'learned'});});
 $('viewVocabulary').addEventListener('click',()=>{$('vocabularyDialog').showModal();loadAliases();});
@@ -482,14 +490,33 @@ function cancelSpeechPreparation(){
 function stage(label,detail=''){
  stageLabel=label;stageBegin=clock();const token=++stageTick;
  $('stageStatus').hidden=false;$('stageStatus').textContent=label+(detail?' · '+detail:'');
- const tick=()=>{if(token!==stageTick||$('stageStatus').hidden||(!busy&&!listening))return;const s=(clock()-stageBegin)/1000;
+ // Ticks only while work is actually underway; an abandoned stage stops counting.
+ const tick=()=>{if(token!==stageTick||$('stageStatus').hidden||(!busy&&!listening&&!inlinePendingId&&!pastePending))return;const s=(clock()-stageBegin)/1000;
   $('stageStatus').textContent=stageLabel+' · '+(s>=10?s.toFixed(0):s.toFixed(1))+' s';setTimeout(tick,200);};
  setTimeout(tick,200);
 }
 function stageDone(text=''){stageTick++;stageLabel='';$('stageStatus').hidden=!text;$('stageStatus').textContent=text;}
+// Timing marks for one capture, monotonic, from the record request to the paste request. Only durations are
+// shown; no text, audio or application names. Each stage's own time is reported, so a long wait names its stage.
+function mark(name){stageTimes[name]=clock();}
+function freshPromptTimes(){if(!stageTimes.chain)stageTimes={request:stageTimes.request,mic:stageTimes.mic,stop:stageTimes.stop,transcript:stageTimes.transcript};
+ for(const key of ['promptStart','prompt','pasteStart','paste'])delete stageTimes[key];}
+function seconds(ms){return (ms/1000).toFixed(1)+' s';}
+function between(from,to){const a=stageTimes[from],b=stageTimes[to];return a!==undefined&&b!==undefined&&b>=a?b-a:undefined;}
+function timingSummary(final){
+ const parts=[],add=(label,ms)=>{if(ms!==undefined)parts.push(label+' '+seconds(ms));};
+ if(stageTimes.chain){add('transcript',between('stop','transcript'));add('spellings',between('correctStart','corrected'));}
+ add('prompt',between('promptStart','prompt'));
+ add('paste request',between('pasteStart','paste'));
+ // The total after Stop is meaningful only when every stage ran automatically, one after another.
+ if(final&&stageTimes.chain)add('total after Stop',between('stop',final));
+ return parts.join(' · ');
+}
 function speechSummary(r){
  const t=r.timings||{},parts=[];
+ const mic=between('request','mic');if(mic!==undefined&&mic>=500)parts.push(`Microphone ready ${seconds(mic)}`);
  if(t.stopToFinalMs!==undefined)parts.push(`Transcript ${(t.stopToFinalMs/1000).toFixed(1)} s after Stop`);
+ else if(between('stop','transcript')!==undefined)parts.push(`Transcript ${seconds(between('stop','transcript'))} after Stop`);
  else if(t.transcribeMs!==undefined)parts.push(`Transcript ${(t.transcribeMs/1000).toFixed(1)} s`);
  if(r.incremental&&r.incremental.used)parts.push(`${r.incremental.windows} window${r.incremental.windows===1?'':'s'} while you spoke`);
  else if(r.incremental&&r.incremental.fallbackReason)parts.push('whole recording after Stop');
@@ -505,7 +532,7 @@ function renderAliases(){
   <bdi class="alias-heard">${esc(rule.heard)}</bdi><span class="alias-arrow">→</span><bdi class="alias-name">${esc(rule.canonical)}</bdi>
   <label class="learning-choice"><input type="checkbox" data-alias-toggle="${rule.id}" ${rule.enabled?'checked':''} aria-label="Use this rule">Use</label>
   <span class="alias-state">${rule.provenance==='learned'?'approved from a correction':'added by you'}</span>
-  <button class="text-btn" data-alias-delete="${rule.id}">Delete</button></div>`).join(''):'<p class="learning-help">No rules yet. Add one below, or approve a correction from a reviewed transcript.</p>';
+  <button class="text-btn" data-alias-edit="${rule.id}">Edit</button><button class="text-btn" data-alias-delete="${rule.id}">Delete</button></div>`).join(''):'<p class="learning-help">No rules yet. Add one below, or approve a correction from a reviewed transcript.</p>';
  proposals.innerHTML=aliasProposals.length?'<p class="learning-help">Corrections from reviewed transcripts — approve to replace automatically:</p>'+aliasProposals.map(p=>`<div class="alias-row"><bdi class="alias-heard">${esc(p.heard)}</bdi><span class="alias-arrow">→</span><bdi class="alias-name">${esc(p.spelling)}</bdi><button class="text-btn" data-alias-approve="${esc(p.heard)}" data-alias-canonical="${esc(p.spelling)}">Approve</button></div>`).join(''):'';
  $('aliasStatus').textContent=`${aliasRules.length} rule${aliasRules.length===1?'':'s'} · ${aliasRules.filter(r=>r.enabled).length} active${aliasProposals.length?` · ${aliasProposals.length} proposal${aliasProposals.length===1?'':'s'}`:''}`;
 }
@@ -513,8 +540,8 @@ function showAliases(listing){aliasRules=listing.aliases||[];aliasProposals=list
 async function loadAliases(){try{showAliases(await api('/api/aliases'));}catch(e){$('aliasStatus').textContent=e.message;}}
 async function aliasAction(path,body){
  busy=true;update();
- try{showAliases(await api(path,body));notice('Vocabulary rules updated.',true);}
- catch(e){notice(e.message);}
+ try{showAliases(await api(path,body));notice('Vocabulary rules updated.',true);return true;}
+ catch(e){notice(e.message);return false;}
  finally{busy=false;update();}
 }
 function showProvisional(text){
@@ -621,16 +648,16 @@ async function transcribeRecording(){
   stageDone(speechSummary(r));
   notice('Transcript ready. '+(aliasText?aliasText+'. ':'')+(r.notice?r.notice+' ':'')+'Automatic spelling correction is off. Review it or use Improve English spellings.',true);
   if(correctSpelling){
-   $('recordTitle').textContent='Transcript ready. Checking English spellings…';stage('Checking English spellings');
+   $('recordTitle').textContent='Transcript ready. Checking English spellings…';stage('Checking English spellings');mark('correctStart');
    notice('Your transcript is visible. The prompt model is checking English spellings; the original is preserved.');
    try{
     const corrected=await api('/api/restore-english',{text:original,vocabulary:$('vocabulary').value});
-    $('arabic').value=corrected.text;invalidate();
-    stageDone('English spellings checked');notice('English spellings checked. Review the transcript against the original.',true);
-   }catch(e){notice('Transcript ready. '+e.message+' The original is preserved. Use Improve English spellings to retry.');}
+    $('arabic').value=corrected.text;invalidate();mark('corrected');
+    stageDone('English spellings checked · '+seconds(between('correctStart','corrected')));notice('English spellings checked. Review the transcript against the original.',true);
+   }catch(e){stageDone('Spelling check failed after '+seconds(clock()-stageTimes.correctStart));notice('Transcript ready. '+e.message+' The original is preserved. Use Improve English spellings to retry.');}
   }
  }catch(e){stageDone('');$('voiceRetry').style.display='flex';notice(e.message+' Your recording is available to save or retry while this window stays open.');}
- finally{inlineSpeechId=null;busy=false;$('recordTitle').textContent='Start with your voice.';update();renderProjects();if(inlineMode()&&inlineAutoPrepare){inlineAutoPrepare=false;prepareInline();}else if(quickCapture&&captured){$('translate').click();}}
+ finally{if(generation===jobGeneration&&/^(Transcribing|Sending|Checking)/.test(stageLabel))stageDone('');inlineSpeechId=null;busy=false;$('recordTitle').textContent='Start with your voice.';update();renderProjects();if(inlineMode()&&inlineAutoPrepare){inlineAutoPrepare=false;stageTimes.chain=quickCapture&&stageTimes.transcript!==undefined;prepareInline();}else if(quickCapture&&captured){stageTimes.chain=true;$('translate').click();}}
 }
 $('restoreEnglish').addEventListener('click',async()=>{if(busy||listening||!$('arabic').value.trim())return;const original=$('arabic').value;busy=true;update();renderProjects();$('restoreEnglish').textContent='Checking English spellings…';notice('The prompt model is checking transcript text. Audio stays local. The message is never submitted.');try{const r=await api('/api/restore-english',{text:original,vocabulary:$('vocabulary').value});$('arabic').value=r.text;learningOriginal=original;$('originalSpeechText').textContent=original;$('originalSpeech').style.display='block';invalidate();notice((r.notice?r.notice+' ':'')+'English spellings checked. Review the mixed transcript against the original.',true);}catch(e){notice(e.message+' Your text is preserved.');}finally{busy=false;$('restoreEnglish').textContent='Improve English spellings';update();renderProjects();}});
 $('retryAudio').addEventListener('click',transcribeRecording);
@@ -765,7 +792,7 @@ async function prepareInline(){
     if(applied.replacements.length)inlineAliasChanges=applied.replacements.map(x=>`<p><bdi>${esc(x.heard)}</bdi> → <mark><bdi>${esc(x.replacement)}</bdi></mark></p>`).join('');}
   }catch(e){}
  }
- stage('Preparing English prompt');
+ freshPromptTimes();stage('Preparing English prompt');mark('promptStart');
  inlineRevision++;inlineSourceText=source;inlineSourceDirty=false;inlineNeedsTranslation=true;$('inlineSource').value=source;
  if(!inlineOriginalText){inlineOriginalText=source;$('inlineOriginal').textContent=source;}
  const body=inlineBody(source),revision=inlineRevision;inlinePendingId=body.requestId;$('inlineAcknowledge').checked=false;
@@ -775,11 +802,12 @@ async function prepareInline(){
   if(inlinePendingId!==body.requestId||inlineRevision!==revision||!inlineMode())return;
   if(result.revision!==revision||result.requestId!==body.requestId||result.workingText!==source)throw new Error('This result belongs to an older source. Translate again.');
   inlineIssues=result.issues||[];inlineNeedsTranslation=result.status!=='ready';inlineRetryAvailable=result.status==='failed'||inlineIssues.some(i=>i.code==='invalid_response');if(inlineNeedsTranslation)inlineSourceDirty=true;
+  mark('prompt');stageDone(result.status==='ready'?'Prompt ready · '+timingSummary('prompt'):'Needs review · '+timingSummary());
   if(result.status==='ready')$('english').value=result.outputText;
   $('inlineChanges').innerHTML=inlineAliasChanges+(result.replacements||[]).map(r=>`<p><bdi>${esc(r.source_text)}</bdi> → <mark><bdi>${esc(r.replacement_text||'Needs review')}</bdi></mark></p>`).join('');
   $('inlineStatus').textContent=result.status==='ready'?'Ready to review. English outside the translated phrases is unchanged. Shortcut recordings paste automatically when ready.':inlineIssues.map(i=>i.message).join(' ');
   if(inlineNeedsTranslation)$('inlineDetails').open=true;
- }catch(e){if(inlinePendingId===body.requestId){inlineNeedsTranslation=true;inlineSourceDirty=true;inlineRetryAvailable=true;$('inlineStatus').textContent=e.message+' Your source is preserved.';}}
+ }catch(e){if(inlinePendingId===body.requestId){stageTimes.chain=false;stageDone('Prompt preparation failed after '+seconds(clock()-stageTimes.promptStart));inlineNeedsTranslation=true;inlineSourceDirty=true;inlineRetryAvailable=true;$('inlineStatus').textContent=e.message+' Your source is preserved.';}}
  finally{if(inlinePendingId===body.requestId){inlinePendingId=null;invalidate();}}
 }
 function acceptInlineRecognition(r){

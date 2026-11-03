@@ -23,6 +23,8 @@ function native(app,{failure=false,available=true}={}){
  assert.equal(app.posted('/api/translate').length,1);
  assert.equal(calls.length,2);assert.equal(calls[0].english,'Improve the login page.');
  assert.equal(calls[0].captureId,'one-recording');assert.equal(calls[1],'closed');
+ // Each stage reports its own time; no recording ran, so there is no after-Stop total.
+ assert.match(n.get('stageStatus').textContent,/^Paste requested · prompt \d+\.\d s · paste request \d+\.\d s$/);
  vm.runInContext('update();update();',app.context);await ready(app);
  assert.equal(calls.length,2,'Repeated renders must never paste again');
  assert.equal(app.posted('/api/send').length,0);assert.equal(app.posted('/api/catalog').length,0);
@@ -32,6 +34,7 @@ function native(app,{failure=false,available=true}={}){
  n.get('flowCapture').value='خلي React';n.get('flowCapture').listeners.input({inputType:'insertFromPaste'});
  await ready(app);assert.equal(calls.length,1);assert.equal(n.get('english').value,'Keep React.');
  assert.match(n.get('notice').textContent,/focus changed/);
+ assert.equal(n.get('stageStatus').textContent,'Paste not requested');
  assert.equal(app.context.document.documentElement.dataset.captureStage,'review');
  vm.runInContext('update();',app.context);await ready(app);assert.equal(calls.length,1);
  app=boot({quick:true,provider:'wispr',status:{nativeDesktop:true},translate:{english:'Review the page.'}});

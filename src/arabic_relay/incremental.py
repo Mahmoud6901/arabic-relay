@@ -264,7 +264,6 @@ def reconcile(windows):
     output = []
     for index, window in enumerate(windows[1:], start=1):
         cut = windows[index - 1]['cut'] / RATE
-        following = window_words(window)
         low, high = cut - SEAM_MARGIN, cut + SEAM_MARGIN
         # The same span from both windows; outside it, each window keeps only its own side.
         output += [word for word in words if middle(word) < low]
@@ -305,10 +304,11 @@ def assemble(words):
 class Job:
     """One recording's PCM, its windows and its provisional text. Owned by its unguessable job ID."""
 
-    def __init__(self, job_id, inline_mode, keywords, key, transcriber):
+    def __init__(self, job_id, inline_mode, keywords, key, transcriber, rules=None):
         self.id = job_id
         self.inline = inline_mode
         self.keywords = list(keywords)
+        self.rules = rules                 # approved vocabulary rules in force when the recording started
         self.key = key                     # model folder and device, snapshotted at job start
         self.transcriber = transcriber     # callable(header, payload, cancel_event) -> worker result
         self.pcm = bytearray()

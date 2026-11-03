@@ -71,6 +71,19 @@ class StreamRoutes(unittest.TestCase):
         self.assertEqual(body['timings']['path'], 'incremental')
         self.assertFalse(speech.TRANSCRIBE_LOCK.locked())
 
+    def test_approved_rules_are_the_ones_in_force_when_the_recording_started(self):
+        rule = speech.aliases.add('سلام', 'Salam')['aliases'][0]['id']
+        job = 'main-' + 'r' * 30
+        last = self.record(job)
+        # Rules edited while this recording is underway apply to the next recording, never halfway through one.
+        speech.aliases.update(rule, enabled=False)
+        speech.aliases.add('خالص', 'totally')
+        status, body = self.post('/api/stream/finish', {'jobId': job, 'lastSeq': last, 'totalSamples': len(self.audio) // 2})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body['text'].split()[0], 'Salam')
+        self.assertEqual(body['text'].split()[-1], 'خالص')
+        self.assertEqual(body['rawText'].split()[0], 'سلام')
+
     def test_inline_receives_segments_with_word_times(self):
         job = 'inline-' + 'b' * 30
         last = self.record(job, inline=True)

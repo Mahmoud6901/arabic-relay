@@ -30,7 +30,7 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
   else if(url==='/api/vocabulary')data={words:['React'],corrections:[{heard:'لوجين فلو',spelling:'login flow'}]};
   else if(url==='/api/aliases')data={aliases:rules,proposals};
   else if(url==='/api/aliases/add'){const b=JSON.parse(options.body);rules=rules.concat([{id:rules.length+9,heard:b.heard,canonical:b.canonical,enabled:1,provenance:b.provenance||'user'}]);proposals=proposals.filter(p=>p.heard!==b.heard);data={aliases:rules,proposals};}
-  else if(url==='/api/aliases/update'){const b=JSON.parse(options.body);rules=rules.map(r=>r.id===b.id?{...r,enabled:b.enabled?1:0}:r);data={aliases:rules,proposals};}
+  else if(url==='/api/aliases/update'){const b=JSON.parse(options.body);rules=rules.map(r=>r.id===b.id?{...r,...(b.enabled!==undefined?{enabled:b.enabled?1:0}:{}),...(b.heard?{heard:b.heard,canonical:b.canonical}:{})}:r);data={aliases:rules,proposals};}
   else if(url==='/api/aliases/delete'){const b=JSON.parse(options.body);rules=rules.filter(r=>r.id!==b.id);data={aliases:rules,proposals};}
   else if(url==='/api/aliases/apply'){const b=JSON.parse(options.body);const text=b.text.replace(/ريدزاين/g,'redesign');data={text,original:b.text,replacements:text===b.text?[]:[{heard:'ريدزاين',canonical:'redesign',replacement:'redesign'}],conflicts:[]};}
   else if(url==='/api/transcribe')data=transcription;
@@ -68,6 +68,20 @@ const count=url=>requests.filter(r=>r.url===url).length;
  await nodes.get('aliasList').listeners.click({target:{closest:sel=>sel==='[data-alias-delete]'?{dataset:{aliasDelete:'1'}}:null}});
  await flush();
  assert.equal(JSON.parse(requests.filter(r=>r.url==='/api/aliases/delete').at(-1).options.body).id,1);
+ // Edit: the rule's values fill the form, Save updates that rule (not a new one), and the form returns to Add.
+ const darkId=rules.find(r=>r.canonical==='dark mode').id,addsBefore=count('/api/aliases/add');
+ nodes.get('aliasList').listeners.click({target:{closest:sel=>sel==='[data-alias-edit]'?{dataset:{aliasEdit:String(darkId)}}:null}});
+ assert.equal(nodes.get('aliasHeard').value,'دارك مود');assert.equal(nodes.get('aliasCanonical').value,'dark mode');
+ assert.equal(nodes.get('aliasAdd').textContent,'Save rule');assert.equal(nodes.get('aliasCancelEdit').hidden,false);
+ nodes.get('aliasCanonical').value='Dark Mode';
+ await nodes.get('aliasAdd').click();await flush();
+ assert.deepEqual(JSON.parse(requests.filter(r=>r.url==='/api/aliases/update').at(-1).options.body),{id:darkId,heard:'دارك مود',canonical:'Dark Mode'});
+ assert.equal(count('/api/aliases/add'),addsBefore);
+ assert.equal(nodes.get('aliasAdd').textContent,'Add rule');assert.equal(nodes.get('aliasHeard').value,'');
+ assert.ok(nodes.get('aliasList').innerHTML.includes('Dark Mode'));
+ nodes.get('aliasList').listeners.click({target:{closest:sel=>sel==='[data-alias-edit]'?{dataset:{aliasEdit:String(darkId)}}:null}});
+ await nodes.get('aliasCancelEdit').click();
+ assert.equal(nodes.get('aliasAdd').textContent,'Add rule');assert.equal(nodes.get('aliasCanonical').value,'');
  // 2. A transcript: rules already applied by the server are announced; the original stays available.
  rules=[{id:1,heard:'ريدزاين',canonical:'redesign',enabled:1,provenance:'user'}];
  await nodes.get('record').click();await nodes.get('record').click();await flush(8);
@@ -82,7 +96,7 @@ const count=url=>requests.filter(r=>r.url===url).length;
  nodes.get('arabic').value='اعمل ريدزاين';await nodes.get('translate').click();await flush(6);
  assert.equal(nodes.get('english').value,'Redesign the page.');
  assert.equal(nodes.get('arabic').value,'اعمل ريدزاين');
- assert.equal(nodes.get('stageStatus').textContent,'Prompt ready');
+ assert.match(nodes.get('stageStatus').textContent,/^Prompt ready · prompt \d+\.\d s$/);   // its own time, not time since the recording
  // 4. Inline: approved rules rewrite the finalized source before translation.
  await nodes.get('inlineMode').click();await nodes.get('clearDraft').click();
  nodes.get('english').value='اعمل ريدزاين للصفحة';
@@ -93,6 +107,7 @@ const count=url=>requests.filter(r=>r.url===url).length;
  assert.equal(inline.text,'اعمل redesign للصفحة',inline.text);
  assert.equal(count('/api/inline'),beforeInline+1);
  assert.ok(nodes.get('inlineChanges').innerHTML.includes('redesign'));
+ assert.match(nodes.get('stageStatus').textContent,/^Prompt ready · prompt \d+\.\d s$/,'Inline preparation ends its stage');
  // 5. A late preparation result never replaces newer text.
  await nodes.get('craftMode').click();await nodes.get('clearDraft').click();
  nodes.get('arabic').value='اعمل ريدزاين';

@@ -74,6 +74,9 @@ async function stop(){await nodes.get('stopRecording').click();await flush(8);}
   assert.equal(pastes.length,1);
   assert.equal(pastes[0].english,'Redesign the home page.');
   assert.ok(!pastes[0].english.includes('عايز'));
+  // A shortcut recording runs every stage automatically, so its timing names each stage and the total after Stop.
+  assert.match(nodes.get('stageStatus').textContent,
+   /^Paste requested · transcript \d+\.\d s · prompt \d+\.\d s · paste request \d+\.\d s · total after Stop \d+\.\d s$/,nodes.get('stageStatus').textContent);
   console.log('Quick capture: provisional transcript stays display-only; the final prompt pastes once, never Enter.');
   return;
  }

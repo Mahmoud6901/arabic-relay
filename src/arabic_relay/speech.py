@@ -434,10 +434,15 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
     return response
 
 
-def apply_aliases(response):
+def approved_rules():
+    """The enabled approved rules, read once: a recording uses the rules that were in force when it started."""
+    return [row for row in aliases.rows() if row['enabled']]
+
+
+def apply_aliases(response, rules=None):
     """Approved vocabulary rules replace finalized speech text; the recognition output stays in rawText."""
     try:
-        applied = aliases.apply(response.get('text') or '')
+        applied = aliases.apply(response.get('text') or '', rules)
     except ValueError:
         return response                 # over-long text is validated elsewhere; never fail a transcript here
     response['text'] = applied['text']
@@ -450,9 +455,9 @@ def apply_aliases(response):
     return response
 
 
-def whisper_response(result, folder, inline_mode):
+def whisper_response(result, folder, inline_mode, rules=None):
     response = transcript_result(result.get('text'), models.model_label(folder))
-    apply_aliases(response)
+    apply_aliases(response, rules)
     response['device'] = result.get('device', 'GPU')
     if inline_mode:
         response.update(segments=result.get('segments', []), seconds=result.get('seconds'),
@@ -509,12 +514,28 @@ def engine_request(key, header, payload, timeout=300, cancel_event=None):
                 logging.error('Speech engine stopped on the GPU; retrying this recording on the CPU')
                 continue
             raise ValueError(WORKER_MESSAGES.get(error.code, WORKER_FAILED)) from None
-        if result.get('fallbackReason') in ('device', 'oom'):
-            record_gpu_failure('device' if result['fallbackReason'] == 'device' else 'oom')
+        note_fallback(result)
         if launched != device:
             result['fallback'] = True
+            # The GPU worker stopped and the same audio then decoded on the CPU: the GPU, not the recording, failed.
+            record_gpu_failure('device')
         return result
     raise ValueError('The speech engine stopped. Record again to restart it.')
+
+
+LAST_DEVICE_REPORT = None
+
+
+def note_fallback(result):
+    """A worker that moved to the CPU after a device fault reports it with every result; count it once per worker.
+    A transient OOM is never recorded."""
+    global LAST_DEVICE_REPORT
+    if result.get('fallbackReason') != 'device':
+        return
+    worker = engine_host.HOST.loads
+    if worker != LAST_DEVICE_REPORT:
+        LAST_DEVICE_REPORT = worker
+        record_gpu_failure('device')
 
 
 def window_transcriber(key):
@@ -523,7 +544,9 @@ def window_transcriber(key):
             raise engine_host.EngineError('CANCELLED')
         engine_host.HOST.ensure(*key)
         # A window is short and bounded; a cancelled job discards its result instead of killing the model.
-        return engine_host.HOST.request(header, payload, timeout=90)
+        result = engine_host.HOST.request(header, payload, timeout=90)
+        note_fallback(result)
+        return result
     return transcribe_window
 
 
@@ -561,7 +584,9 @@ def stream_start(job_id, inline_mode=False, vocabulary=''):
         engine_host.HOST.watch(engine_settings()['idleSeconds'])
         engine_host.HOST.hold()
         engine_host.HOST.ensure(*key)
-        job = incremental.REGISTRY.start(job_id, lambda: incremental.Job(job_id, inline_mode, keywords, key, window_transcriber(key)))
+        rules = approved_rules()     # snapshotted with the model, device and hints for this recording
+        job = incremental.REGISTRY.start(job_id, lambda: incremental.Job(job_id, inline_mode, keywords, key, window_transcriber(key),
+                                                                          rules=rules))
     except BaseException:
         engine_host.HOST.release_hold()
         TRANSCRIBE_LOCK.release()
@@ -601,7 +626,7 @@ def stream_finish(job_id, last_seq, total_samples):
             # The authoritative recording, decoded whole with the baseline settings for this writing mode.
             result = engine_request(job.key, {'format': 'pcm16', 'keywords': job.keywords,
                                               **({'inline': True} if job.inline else {})}, pcm, cancel_event=job.cancelled)
-        response = whisper_response(result, Path(job.key[0]), job.inline)
+        response = whisper_response(result, Path(job.key[0]), job.inline, job.rules)
         done = time.monotonic()
         times = job.times
         response['incremental'] = {'used': reason is None, 'windows': len(job.windows),

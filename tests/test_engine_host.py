@@ -150,10 +150,35 @@ class EngineRequests(unittest.TestCase):
     def test_a_gpu_crash_is_retried_once_on_the_cpu_and_disclosed(self):
         host = Mock()
         host.request.side_effect = [engine_host.EngineError('ENGINE_STOPPED'), {'text': 'نص', 'device': 'CPU'}]
-        with patch.object(engine_host, 'HOST', host):
+        with patch.object(engine_host, 'HOST', host), patch.object(speech, 'record_gpu_failure') as failure:
             result = speech.engine_request(('model', 'cuda'), {'format': 'encoded'}, b'audio')
         self.assertEqual([c.args for c in host.ensure.call_args_list], [('model', 'cuda'), ('model', 'cpu')])
         self.assertTrue(result['fallback'])
+        # The same audio decoded on the CPU, so the GPU failed: Auto device choice remembers it.
+        failure.assert_called_once_with('device')
+
+    def test_a_cpu_failure_after_a_gpu_crash_is_not_blamed_on_the_gpu(self):
+        host = Mock()
+        host.request.side_effect = [engine_host.EngineError('ENGINE_STOPPED'), engine_host.EngineError('ENGINE_STOPPED')]
+        with patch.object(engine_host, 'HOST', host), patch.object(speech, 'record_gpu_failure') as failure,                 self.assertRaisesRegex(ValueError, 'Local speech failed'):
+            speech.engine_request(('model', 'cuda'), {'format': 'encoded'}, b'audio')
+        failure.assert_not_called()
+
+    def test_a_device_fallback_is_remembered_once_per_worker_and_never_for_oom(self):
+        host = Mock(loads=1)
+        host.request.return_value = {'text': 'نص', 'device': 'CPU', 'fallback': True, 'fallbackReason': 'device'}
+        with patch.object(engine_host, 'HOST', host), patch.object(speech, 'record_gpu_failure') as failure,                 patch.object(speech, 'LAST_DEVICE_REPORT', None):
+            for _ in range(3):
+                speech.engine_request(('model', 'cuda'), {'format': 'encoded'}, b'audio')
+            self.assertEqual(failure.call_count, 1, 'one fault, however many recordings that worker then serves')
+            host.loads = 2
+            speech.engine_request(('model', 'cuda'), {'format': 'encoded'}, b'audio')
+            self.assertEqual(failure.call_count, 2, 'a new worker that faults again is a new failure')
+            host.request.return_value = {'text': 'نص', 'device': 'CPU', 'fallback': True, 'fallbackReason': 'oom'}
+            host.loads = 3
+            speech.engine_request(('model', 'cuda'), {'format': 'encoded'}, b'audio')
+            speech.window_transcriber(('model', 'cuda'))({'format': 'pcm16'}, b'', threading.Event())
+            self.assertEqual(failure.call_count, 2, 'memory pressure never suspends the GPU')
 
     def test_worker_codes_become_user_messages(self):
         host = Mock()
