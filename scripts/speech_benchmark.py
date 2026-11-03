@@ -102,6 +102,9 @@ def run_oneshot(folder, device, clip, data, inline_mode):
 
 
 def run_warm(folder, device, clip, data, inline_mode):
+    # The user speaks for the length of the clip first. The idle GPU clocks down meanwhile (as in real use), so the
+    # decode after Stop must not run straight after the previous configuration's decode on a hot GPU.
+    time.sleep(clip['seconds'])
     stopped = time.monotonic()
     result = speech.engine_request((str(folder), device), {'format': 'encoded', 'keywords': [],
                                                           **({'inline': True} if inline_mode else {})}, data)

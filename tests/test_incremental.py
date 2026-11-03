@@ -214,13 +214,27 @@ class Jobs(unittest.TestCase):
 
     def test_a_short_utterance_is_one_whole_window(self):
         audio = scripted_audio(6)[:6 * RATE * 2]
-        job = incremental.Job('job-' + 'i' * 20, False, [], ('model', 'cuda'), FakeRecognizer(audio))
+        recognizer = FakeRecognizer(audio)
+        job = incremental.Job('job-' + 'i' * 20, False, [], ('model', 'cuda'), recognizer)
         last = feed(job, audio)
         result, reason = job.finish(len(audio) // 2, last, timeout=10)
         self.assertIsNone(reason)
         self.assertEqual(len(job.windows), 1)
         self.assertIsNone(job.windows[0]['cut'])
         self.assertTrue(result['text'].startswith('سلام'))
+        # Nothing to join: Craft decodes it like a whole recording, without word timestamps.
+        self.assertEqual(recognizer.calls[0]['window'], False)
+        self.assertTrue(result['effectiveAsrConfig']['wholeClip'])
+        whole = incremental.Job('job-' + 'w' * 20, False, [], ('model', 'cuda'),
+                                lambda header, payload, cancel: {'text': ' سلام عايز ', 'device': 'GPU'})
+        self.assertEqual(whole.finish(len(audio) // 2, feed(whole, audio), timeout=10)[0]['text'], 'سلام عايز')
+        # Inline needs word times for its spans, so it keeps the window decode.
+        recognizer = FakeRecognizer(audio)
+        job = incremental.Job('job-' + 'k' * 20, True, [], ('model', 'cuda'), recognizer)
+        result, reason = job.finish(len(audio) // 2, feed(job, audio), timeout=10)
+        self.assertIsNone(reason)
+        self.assertEqual(recognizer.calls[0]['window'], True)
+        self.assertTrue(result['segments'][0]['words'])
 
     def test_silence_produces_no_transcript(self):
         audio = bytes(2 * 8 * RATE)

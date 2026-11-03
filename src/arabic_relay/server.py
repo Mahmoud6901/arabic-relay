@@ -140,6 +140,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/stream/chunk':
                 # Raw 16 kHz mono PCM; the server enforces the limits, not only the page.
                 if not 0 < size <= speech.incremental.MAX_CHUNK * 2 or self.headers.get('Content-Type') != 'application/octet-stream':
+                    if 0 < size <= speech.incremental.MAX_CHUNK * 8:
+                        self.rfile.read(size)   # a bounded body is drained so the client reads the error, not a reset
                     raise ValueError('Invalid recording audio.')
                 try:
                     seq = int(self.headers.get('X-Relay-Stream-Seq', ''))

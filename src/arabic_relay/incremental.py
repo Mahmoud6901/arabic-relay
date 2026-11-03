@@ -380,11 +380,15 @@ class Job:
                     return
                 start, end, cut, half = plan
                 payload = bytes(self.pcm[start * 2:end * 2])
+                # A recording that ends before any window was decoded is one whole clip. Craft mode then needs no
+                # word timestamps to join anything, so it is decoded exactly as the whole-recording path decodes it
+                # (measured: word timestamps added ~0.3 s after Stop to short Craft recordings).
+                whole = start == 0 and cut is None and not self.windows and not self.inline
             index = len(self.windows)
             started = time.monotonic()
             try:
                 # The same recognition settings as a whole recording in this writing mode, plus word timestamps.
-                result = self.transcriber({'format': 'pcm16', 'window': True, 'inline': self.inline,
+                result = self.transcriber({'format': 'pcm16', 'window': not whole, 'inline': self.inline,
                                            'keywords': self.keywords}, payload, self.cancelled)
             except Exception as error:
                 with self.condition:
@@ -399,7 +403,11 @@ class Job:
                 elapsed = round((time.monotonic() - started) * 1000)
                 self.inference_ms.append(elapsed)
                 self.windows.append({'index': index, 'start': start, 'end': end, 'cut': cut, 'half': half,
-                                     'result': result})
+                                     'result': result, 'whole': whole})
+                if whole:
+                    self.times.setdefault('firstPartial', time.monotonic())
+                    self.condition.notify_all()
+                    return
                 self.next_start = end if cut is None else cut - half
                 if not self.closed and cut is not None and elapsed > (end - start) / RATE * 1000:
                     # Decoding this window took longer than the audio it covered while more audio is still
@@ -436,6 +444,14 @@ class Job:
                 return None, self.stopped_reason
             if not self.windows or self.windows[-1]['cut'] is not None or self.windows[-1]['end'] != len(self.pcm) // 2:
                 return None, 'missing coverage'
+            if self.windows[0].get('whole'):
+                only = self.windows[0]['result']
+                text = only['text'] if isinstance(only.get('text'), str) else ''.join(
+                    segment.get('text', '') for segment in only.get('segments') or [])
+                return {'text': text.strip(), 'segments': [], 'device': only.get('device', 'GPU'),
+                        'fallback': bool(only.get('fallback')), 'seconds': len(self.pcm) / 2 / RATE,
+                        'effectiveAsrConfig': {'path': 'incremental', 'windows': 1, 'wholeClip': True,
+                                               'wordTimestamps': False}}, None
             try:
                 words = reconcile(self.windows)
             except Ambiguous as error:
