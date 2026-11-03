@@ -14,8 +14,9 @@ import urllib.request
 import wave
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-from . import locate, models, paths, store
+from . import engine_host, incremental, locate, models, paths, store
 
 
 TRANSCRIBE_LOCK = threading.Lock()
@@ -30,6 +31,9 @@ def worker_environment():
     for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'):
         env.pop(key, None)
     return env
+
+
+engine_host.HOST.environment = worker_environment
 
 
 def cancel_preparation(request_id=None):
@@ -55,6 +59,12 @@ def prepare_worker(request_id):
     folder, device = speech_model_path(), speech_device()
     if folder is None:
         return {'prepared': False}
+    if engine_enabled():
+        # The reusable worker loads and warms while the microphone records; a loaded model is simply reused.
+        # Never replace the model another window's recording is using.
+        if not TRANSCRIBE_LOCK.locked() or engine_host.HOST.key == (str(folder), device):
+            engine_host.HOST.ensure(folder, device)
+        return {'prepared': True, 'engine': engine_host.HOST.status()}
     with PREPARE_LOCK:
         if TRANSCRIBE_LOCK.locked():
             return {'prepared': False}
@@ -146,7 +156,8 @@ def status():
     return {'speechConfigured': model is not None, 'speechModel': models.model_label(model) if model else None,
             'modelPath': str(model) if model else None, 'speechDevice': 'GPU' if speech_device() == 'cuda' else 'CPU',
             'cpuOnly': store.get_setting('speech_device') == 'cpu', 'gpu': gpu['name'] if gpu else None,
-            'modelOwned': model is not None and models.app_owned(model), 'missingModel': missing_model()}
+            'modelOwned': model is not None and models.app_owned(model), 'missingModel': missing_model(),
+            'incrementalDictation': incremental_enabled(), 'engine': engine_host.HOST.status()}
 
 
 def open_wispr_flow():
@@ -303,6 +314,16 @@ def cohere_request(audio, key):
     return text.strip()
 
 
+def parse_keywords(vocabulary):
+    if not isinstance(vocabulary, str) or len(vocabulary) > 3000:
+        raise ValueError('Keep the vocabulary hints under 3,000 characters.')
+    keywords = [word.strip() for word in vocabulary.replace('\n', ',').split(',') if word.strip()]
+    if len(keywords) > 40 or any(len(word) > 80 or any(c in word for c in '<>\r\n') for word in keywords):
+        raise ValueError('Use up to 40 short vocabulary hints, separated by commas.')
+    # Explicit hints have priority. Keep Whisper's context short to avoid over-biasing it.
+    return list(dict.fromkeys(keywords + store.personal_vocabulary()['words']))[:40]
+
+
 def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
     if retry and (not inline_mode or not 0 < retry_seconds <= 30):
         raise ValueError('The recognition retry budget has expired. Edit the source manually.')
@@ -314,13 +335,7 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
     kind = content_type.split(';', 1)[0].strip().lower()
     if kind not in formats or not 0 < len(audio) <= MAX_AUDIO or not formats[kind][1](audio):
         raise ValueError('Record a valid WebM, WAV, or MP4 clip under 24 MB.')
-    if not isinstance(vocabulary, str) or len(vocabulary) > 3000:
-        raise ValueError('Keep the vocabulary hints under 3,000 characters.')
-    keywords = [word.strip() for word in vocabulary.replace('\n', ',').split(',') if word.strip()]
-    if len(keywords) > 40 or any(len(word) > 80 or any(c in word for c in '<>\r\n') for word in keywords):
-        raise ValueError('Use up to 40 short vocabulary hints, separated by commas.')
-    # Explicit hints have priority. Keep Whisper's context short to avoid over-biasing it.
-    keywords = list(dict.fromkeys(keywords + store.personal_vocabulary()['words']))[:40]
+    keywords = parse_keywords(vocabulary)
     if provider == 'cohere':
         return transcribe_cohere(audio, kind)
     folder = speech_model_path()
@@ -328,11 +343,25 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
         raise ValueError('Choose a Whisper model folder in Speech details, then click Refresh.')
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
         raise ValueError('A recording is already being transcribed. Wait for it to finish.')
+    started = time.monotonic()
     try:
-        result = run_worker(folder, audio, keywords, **({'inline_mode': True, 'retry': retry, 'retry_seconds': retry_seconds,
-                                                        'cancel_event': cancel_event} if inline_mode else {}))
+        if engine_enabled():
+            header = {'format': 'encoded', 'keywords': keywords, **({'inline': True, 'retry': retry} if inline_mode else {})}
+            result = engine_request((str(folder), speech_device()), header, audio,
+                                    timeout=retry_seconds if retry else 300, cancel_event=cancel_event)
+        else:
+            result = run_worker(folder, audio, keywords, **({'inline_mode': True, 'retry': retry, 'retry_seconds': retry_seconds,
+                                                            'cancel_event': cancel_event} if inline_mode else {}))
     finally:
         TRANSCRIBE_LOCK.release()
+    response = whisper_response(result, folder, inline_mode)
+    response['timings'] = {'transcribeMs': round((time.monotonic() - started) * 1000),
+                           'path': 'reusable' if engine_enabled() else 'one-shot'}
+    logging.info('Speech timing: full clip %d ms (%s)', response['timings']['transcribeMs'], response['timings']['path'])
+    return response
+
+
+def whisper_response(result, folder, inline_mode):
     response = transcript_result(result.get('text'), models.model_label(folder))
     response['device'] = result.get('device', 'GPU')
     if inline_mode:
@@ -344,6 +373,164 @@ def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mo
     if result.get('fallback'):
         response['notice'] = 'The GPU was unavailable, so this recording ran on the CPU.'
     return response
+
+
+WORKER_MESSAGES = {'AUDIO_TOO_LONG': 'Use a recording under five minutes.',
+                   'MULTILINGUAL_REQUIRED': 'Inline dictation needs a multilingual Whisper model. Choose large-v3 or large-v3-turbo.',
+                   'RETRY_TOO_LONG': 'Retry a recording under 15 seconds, or edit the source manually.',
+                   'INVALID_AUDIO': 'This recording could not be decoded. Record again or type your transcript.'}
+WORKER_FAILED = 'Local speech failed on this recording. Record again; if it keeps failing, turn on Always use CPU in Settings.'
+
+
+# --- Reusable speech engine and processing during speech ---------------------------------------------------
+
+def engine_enabled():
+    """The reusable worker serves local Whisper when processing during speech is enabled."""
+    return incremental_enabled()
+
+
+def incremental_enabled():
+    return bool(store.get_setting('incremental_dictation', 0))
+
+
+def set_incremental(enabled):
+    if type(enabled) is not bool:
+        raise ValueError('Choose whether to process speech while you talk.')
+    store.set_setting('incremental_dictation', int(enabled))
+    if not enabled and not TRANSCRIBE_LOCK.locked():
+        engine_host.HOST.retire()
+    return {'incrementalDictation': enabled}
+
+
+def engine_request(key, header, payload, timeout=300, cancel_event=None):
+    """One request through the reusable worker. A crash on the GPU is retried once on the CPU, as before."""
+    folder, device = key
+    for attempt in (1, 2):
+        launched = device if attempt == 1 else 'cpu'
+        engine_host.HOST.ensure(folder, launched)
+        try:
+            result = engine_host.HOST.request(header, payload, timeout=timeout, cancel_event=cancel_event)
+        except engine_host.EngineError as error:
+            if error.code == 'CANCELLED':
+                raise ValueError('Transcription cancelled. Your source is preserved.') from None
+            if error.code == 'TIMEOUT':
+                raise ValueError('Local transcription took too long. Your recording can be saved or retried manually.') from None
+            if error.code in ('ENGINE_STOPPED', 'NOT_READY') and launched == 'cuda' and not header.get('retry'):
+                logging.error('Speech engine stopped on the GPU; retrying this recording on the CPU')
+                continue
+            raise ValueError(WORKER_MESSAGES.get(error.code, WORKER_FAILED)) from None
+        if launched != device:
+            result['fallback'] = True
+        return result
+    raise ValueError('The speech engine stopped. Record again to restart it.')
+
+
+def window_transcriber(key):
+    def transcribe_window(header, payload, cancel_event):
+        if cancel_event.is_set():
+            raise engine_host.EngineError('CANCELLED')
+        engine_host.HOST.ensure(*key)
+        # A window is short and bounded; a cancelled job discards its result instead of killing the model.
+        return engine_host.HOST.request(header, payload, timeout=90)
+    return transcribe_window
+
+
+def release_stream(job):
+    incremental.REGISTRY.release(job)
+
+
+def expire_streams():
+    incremental.REGISTRY.expire()
+
+
+incremental.REGISTRY.on_release = lambda job: TRANSCRIBE_LOCK.release()
+
+
+def stream_start(job_id, inline_mode=False, vocabulary=''):
+    """Begin processing during speech for one recording; {'accepted': False} keeps the full-clip path."""
+    if type(inline_mode) is not bool:
+        raise ValueError('Invalid recording request.')
+    expire_streams()
+    if not incremental_enabled():
+        return {'accepted': False, 'reason': 'disabled'}
+    folder = speech_model_path()
+    if folder is None:
+        return {'accepted': False, 'reason': 'no_model'}
+    keywords = parse_keywords(vocabulary)
+    if not TRANSCRIBE_LOCK.acquire(blocking=False):
+        return {'accepted': False, 'reason': 'busy'}
+    try:
+        key = (str(folder), speech_device())
+        engine_host.HOST.ensure(*key)
+        job = incremental.REGISTRY.start(job_id, lambda: incremental.Job(job_id, inline_mode, keywords, key, window_transcriber(key)))
+    except BaseException:
+        TRANSCRIBE_LOCK.release()
+        raise
+    if job is None:
+        TRANSCRIBE_LOCK.release()
+        return {'accepted': False, 'reason': 'busy'}
+    return {'accepted': True, 'engine': engine_host.HOST.status()}
+
+
+def stream_chunk(job_id, seq, payload):
+    expire_streams()
+    job = incremental.REGISTRY.get(job_id)
+    try:
+        return job.append(seq, payload)
+    except ValueError:
+        # A gap, repeat or oversized chunk ends this job; the page falls back to the full recording.
+        release_stream(job)
+        raise
+
+
+def stream_finish(job_id, last_seq, total_samples):
+    if type(last_seq) is not int or type(total_samples) is not int:
+        raise ValueError('Invalid recording request.')
+    job = incremental.REGISTRY.get(job_id)
+    stopped = time.monotonic()
+    try:
+        result, reason = job.finish(total_samples, last_seq, timeout=90)
+        if result is None:
+            if job.cancelled.is_set():
+                raise ValueError('This recording was cancelled.')
+            pcm = bytes(job.pcm)
+            if not pcm:
+                raise ValueError('No speech was detected. Record again or type your transcript.')
+            logging.info('Incremental dictation: whole-recording fallback (%s)', reason.split(':')[0])
+            # The authoritative recording, decoded whole with the baseline settings for this writing mode.
+            result = engine_request(job.key, {'format': 'pcm16', 'keywords': job.keywords,
+                                              **({'inline': True} if job.inline else {})}, pcm, cancel_event=job.cancelled)
+        response = whisper_response(result, Path(job.key[0]), job.inline)
+        done = time.monotonic()
+        times = job.times
+        response['incremental'] = {'used': reason is None, 'windows': len(job.windows),
+                                   'fallbackReason': reason.split(':')[0] if reason else None}
+        response['timings'] = {'path': 'incremental' if reason is None else 'incremental-fallback',
+                               'stopToFinalMs': round((done - stopped) * 1000),
+                               'firstPartialMs': round((times['firstPartial'] - times['start']) * 1000) if 'firstPartial' in times else None,
+                               'windowInferenceMs': job.inference_ms[-20:]}
+        logging.info('Speech timing: stop to transcript %d ms (%s, %d windows)', response['timings']['stopToFinalMs'],
+                     response['timings']['path'], len(job.windows))
+        return response
+    finally:
+        release_stream(job)
+
+
+def stream_cancel(job_id):
+    try:
+        job = incremental.REGISTRY.get(job_id)
+    except ValueError:
+        return {'cancelled': True}
+    release_stream(job)
+    return {'cancelled': True}
+
+
+def shutdown_engine():
+    """App quit: discard an unfinished recording job and stop the reusable worker."""
+    job = incremental.REGISTRY.job
+    if job is not None:
+        release_stream(job)
+    engine_host.HOST.stop()
 
 
 def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
@@ -423,7 +610,10 @@ def check():
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
         raise ValueError('A recording is being transcribed. Try again when it finishes.')
     try:
-        result = run_worker(folder, silent_wav(), [], check=True)
+        if engine_enabled():
+            result = engine_request((str(folder), speech_device()), {'format': 'encoded', 'keywords': [], 'check': True}, silent_wav())
+        else:
+            result = run_worker(folder, silent_wav(), [], check=True)
     finally:
         TRANSCRIBE_LOCK.release()
     return {'device': result.get('device', 'GPU'), 'fallback': bool(result.get('fallback'))}

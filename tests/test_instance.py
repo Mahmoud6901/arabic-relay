@@ -74,6 +74,15 @@ class Instance(unittest.TestCase):
             target.write_text(text, encoding='utf-8')
             self.assertFalse(desktop.focus_existing(), text)
 
+    def test_a_separate_data_folder_is_a_separate_instance(self):
+        with patch.dict('os.environ', {}, clear=False) as env:
+            env.pop('ARABIC_RELAY_DATA_DIR', None)
+            self.assertEqual(desktop.instance_name(), 'Local\\ArabicRelay.Window')
+            env['ARABIC_RELAY_DATA_DIR'] = str(paths.DATA)
+            separate = desktop.instance_name()
+        self.assertTrue(separate.startswith('Local\\ArabicRelay.Window-'))
+        self.assertNotEqual(separate, 'Local\\ArabicRelay.Window')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -245,12 +245,22 @@ def run():
     finally:
         capture.stop()
         speech.cancel_preparation()
+        speech.shutdown_engine()
         httpd.shutdown()
         httpd.server_close()
         updates.install_on_quit()
 
 
 MUTEX = None
+
+
+def instance_name():
+    """One window per data folder: the default folder keeps the original name; a separate development or
+    verification folder (ARABIC_RELAY_DATA_DIR) gets its own, so it never focuses or replaces the user's app."""
+    if not os.environ.get('ARABIC_RELAY_DATA_DIR'):
+        return r'Local\ArabicRelay.Window'
+    import hashlib
+    return r'Local\ArabicRelay.Window-' + hashlib.sha256(str(paths.DATA.resolve()).lower().encode()).hexdigest()[:16]
 
 
 def single_instance(name=r'Local\ArabicRelay.Window'):
@@ -302,7 +312,7 @@ def focus_existing():
 
 def main():
     diagnostics.start_logging()
-    if not single_instance():
+    if not single_instance(instance_name()):
         focus_existing()
         return
     try:

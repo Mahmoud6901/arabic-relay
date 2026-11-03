@@ -48,9 +48,9 @@ class Handler(BaseHTTPRequestHandler):
         route = urllib.parse.urlparse(self.path).path
         if getattr(self, 'started', None) is not None and route in (
                 '/api/status', '/api/catalog', '/api/direct/catalog', '/api/transcribe',
-                '/api/translate', '/api/inline', '/api/restore-english', '/api/speech/prepare'):
+                '/api/translate', '/api/inline', '/api/restore-english', '/api/speech/prepare', '/api/stream/finish'):
             elapsed = round((time.monotonic() - self.started) * 1000)
-            if elapsed >= 1000 or route in ('/api/transcribe', '/api/translate', '/api/inline'):
+            if elapsed >= 1000 or route in ('/api/transcribe', '/api/translate', '/api/inline', '/api/stream/finish'):
                 # Only the fixed route, duration and HTTP status; never content, audio, IDs or tokens.
                 logging.info('Request timing: %s %d ms (HTTP %d)', route, elapsed, status)
         raw = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
@@ -77,6 +77,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond((ROOT / 'index.html').read_bytes(), content_type='text/html; charset=utf-8')
             if path.path == '/icon.svg':
                 return self.respond((ROOT / 'assets/icon.svg').read_bytes(), content_type='image/svg+xml')
+            if path.path == '/pcm-capture.js':
+                return self.respond((ROOT / 'assets/pcm-capture.js').read_bytes(), content_type='text/javascript; charset=utf-8')
             if path.path in ('/fonts/Geist.ttf', '/fonts/InstrumentSerif-Italic.ttf', '/fonts/InstrumentSerif-Regular.ttf', '/fonts/DMMono-Regular.ttf', '/fonts/NotoSansArabic.ttf'):
                 return self.respond((ROOT / path.path.lstrip('/')).read_bytes(), content_type='font/ttf')
             if path.path == '/api/status':
@@ -133,6 +135,15 @@ class Handler(BaseHTTPRequestHandler):
                         options['cancel_event'] = inline.job(rid)
                 return self.respond(speech.transcribe(self.rfile.read(size), self.headers.get('Content-Type', ''), vocabulary,
                                                self.headers.get('X-Relay-Provider', 'whisper'), **options))
+            if self.path == '/api/stream/chunk':
+                # Raw 16 kHz mono PCM; the server enforces the limits, not only the page.
+                if not 0 < size <= speech.incremental.MAX_CHUNK * 2 or self.headers.get('Content-Type') != 'application/octet-stream':
+                    raise ValueError('Invalid recording audio.')
+                try:
+                    seq = int(self.headers.get('X-Relay-Stream-Seq', ''))
+                except ValueError:
+                    raise ValueError('Invalid recording audio.') from None
+                return self.respond(speech.stream_chunk(self.headers.get('X-Relay-Stream-Job'), seq, self.rfile.read(size)))
             if not 0 < size <= 100000:
                 raise ValueError('Invalid request size.')
             body = json.loads(self.rfile.read(size))
@@ -144,6 +155,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body.get('requestId'), str):
                     raise ValueError('Invalid recording request.')
                 return self.respond(speech.cancel_preparation(body['requestId']))
+            if self.path == '/api/stream/start':
+                return self.respond(speech.stream_start(body.get('jobId'), body.get('inline', False), body.get('vocabulary', '')))
+            if self.path == '/api/stream/finish':
+                return self.respond(speech.stream_finish(body.get('jobId'), body.get('lastSeq'), body.get('totalSamples')))
+            if self.path == '/api/stream/cancel':
+                return self.respond(speech.stream_cancel(body.get('jobId')))
+            if self.path == '/api/incremental':
+                return self.respond(speech.set_incremental(body.get('enabled')))
             if self.path == '/api/wispr/open':
                 return self.respond(speech.open_wispr_flow())
             if self.path == '/api/whisper-model':

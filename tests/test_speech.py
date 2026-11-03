@@ -220,9 +220,12 @@ class SpeechBoundary(unittest.TestCase):
         with patch.dict(os.environ, {'HF_HUB_CACHE': str(paths.DATA / 'nocache')}), \
                 patch.object(models, 'gpu_info', return_value={'name': 'NVIDIA RTX', 'vramGb': 12.0, 'driver': '1'}), \
                 patch.object(models, 'gpu_runtime_dir', return_value=Path('runtime')):
-            self.assertEqual(speech.status(), {'speechConfigured': True, 'speechModel': 'Whisper large-v3-turbo',
-                                               'modelPath': str(owned), 'speechDevice': 'GPU', 'cpuOnly': False,
-                                               'gpu': 'NVIDIA RTX', 'modelOwned': True, 'missingModel': None})
+            status = speech.status()
+            self.assertEqual(status.pop('engine')['state'], 'stopped')
+            self.assertEqual(status, {'speechConfigured': True, 'speechModel': 'Whisper large-v3-turbo',
+                                      'modelPath': str(owned), 'speechDevice': 'GPU', 'cpuOnly': False,
+                                      'gpu': 'NVIDIA RTX', 'modelOwned': True, 'missingModel': None,
+                                      'incrementalDictation': False})
             speech.set_cpu_only(True)
             self.assertEqual(speech.status()['speechDevice'], 'CPU')
             self.assertTrue(speech.status()['cpuOnly'])
