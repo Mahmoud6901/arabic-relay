@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {boot,flush}=require('./test_translation_ui.cjs');
 const root=path.join(__dirname,'..','src','arabic_relay');
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8').replace(/\r\n/g,'\n');
 const ARABIC=/[؀-ۿ]/;
 // Examples of Arabic that stay Arabic on purpose: the language's own name, a sample of a heard Arabic word.
 const STAYS_ARABIC=new Set(['العربية','ريدزاين']);
@@ -42,6 +42,7 @@ assert.equal(english.tr('Ctrl + Alt + R مش متاح، وممكن تطبيق ت
 const engineStart=html.indexOf('<div id="engine"'),engineEnd=html.indexOf('<dialog id="confirmDialog"');
 assert.ok(engineStart>0&&engineEnd>engineStart);
 const bodyStart=html.indexOf('<body'),scriptStart=html.indexOf('<script>\nlocalizeNode');
+assert.ok(bodyStart>0&&scriptStart>engineEnd,'Find the page and main script boundaries before checking translations');
 const markup=(html.slice(bodyStart,engineStart)+html.slice(engineEnd,scriptStart)).replace(/<!--[\s\S]*?-->/g,'');
 for(const [,text] of markup.matchAll(/>([^<>]*[؀-ۿ][^<>]*)</g))if(!STAYS_ARABIC.has(text.trim()))expectEnglish('page',text.trim());
 for(const [,,value] of markup.matchAll(/\b(aria-label|title|placeholder)="([^"]*[؀-ۿ][^"]*)"/g))if(!STAYS_ARABIC.has(value))expectEnglish('label',value);
