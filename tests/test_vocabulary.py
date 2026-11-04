@@ -1,4 +1,4 @@
-"""Personal vocabulary learns only reviewed source and is reused without T3 writes."""
+"""Personal vocabulary learns only what the user wrote, stays away from Whisper, and is reused without T3 writes."""
 import json
 from contextlib import closing
 from pathlib import Path
@@ -42,17 +42,28 @@ class VocabularyLearning(unittest.TestCase):
         store.forget_vocabulary()
         self.assertEqual(store.personal_vocabulary(), {'words': [], 'corrections': []})
 
-    def test_prepare_learns_reviewed_source_not_generated_translation(self):
-        original = 'الديدلاين بعد الميتنج وخلي React زي ما هو'
-        reviewed = 'الـ deadline بعد الـ meeting وخلي React زي ما هو'
+    def test_prepare_learns_what_the_user_changed_not_what_was_heard_or_generated(self):
+        original = 'الديدلاين بعد الميتنج وخلي ZanyZoom زي ما هو'
+        reviewed = 'الـ deadline بعد الـ meeting وخلي ZanyZoom زي ما هو'
         with patch.object(translate, 'codex_text', return_value='Use an invented Kubernetes requirement.'), patch.object(t3, 'tool') as t3_tool:
             result = translate.translate(reviewed, original)
         memory = result['vocabulary']
-        self.assertEqual(set(memory['words']), {'deadline', 'meeting', 'React'})
+        self.assertEqual(set(memory['words']), {'deadline', 'meeting'})
         self.assertIn({'heard': 'الديدلاين', 'spelling': 'deadline'}, memory['corrections'])
         self.assertIn({'heard': 'الميتنج', 'spelling': 'meeting'}, memory['corrections'])
         self.assertEqual(store.personal_vocabulary(), memory)  # New connection, persistent storage.
         t3_tool.assert_not_called()
+
+    def test_a_recording_nobody_corrected_teaches_nothing(self):
+        heard = 'Please fix ZanyZoom and DonkeyKoktor'
+        with patch.object(translate, 'codex_text', return_value='Please fix them.'):
+            result = translate.translate(heard, heard)
+        self.assertEqual(result['vocabulary'], {'words': [], 'corrections': []})
+
+    def test_typed_text_with_no_recording_still_teaches(self):
+        with patch.object(translate, 'codex_text', return_value='Review React.'):
+            result = translate.translate('راجع React')
+        self.assertEqual(result['vocabulary']['words'], ['React'])
 
     def test_failed_preparation_and_spelling_restore_do_not_learn(self):
         with patch.object(translate, 'codex_text', side_effect=ValueError('Unavailable')):
@@ -62,7 +73,7 @@ class VocabularyLearning(unittest.TestCase):
             translate.restore_english('راجع React')
         self.assertEqual(store.personal_vocabulary(), {'words': [], 'corrections': []})
 
-    def test_saved_words_reach_whisper_and_corrections_reach_codex(self):
+    def test_only_explicit_hints_reach_whisper_and_saved_words_reach_codex(self):
         store.learn_vocabulary('deadline في React', 'ديدلاين في React')
         process = Mock(returncode=0)
         process.communicate.return_value = (json.dumps({'text': 'راجع React'}).encode(), b'')
@@ -73,8 +84,7 @@ class VocabularyLearning(unittest.TestCase):
             codex.assert_not_called()
             translate.restore_english('راجع React', 'ExplicitName')
         keywords = json.loads(process.communicate.call_args.args[0].split(b'\n', 1)[0])['keywords']
-        self.assertEqual(keywords[0], 'ExplicitName')
-        self.assertIn('deadline', keywords)
+        self.assertEqual(keywords, ['ExplicitName'])
         content = codex.call_args.args[0]
         self.assertIn('deadline', content['learned_words'])
         self.assertIn({'heard': 'ديدلاين', 'spelling': 'deadline'}, content['reviewed_spelling_examples'])
@@ -114,7 +124,7 @@ class VocabularyLearning(unittest.TestCase):
         self.assertIn('meeting', store.personal_vocabulary()['words'])
         self.assertIn({'heard': 'ميتنج', 'spelling': 'meeting'}, store.personal_vocabulary()['corrections'])
 
-    def test_disabled_learning_keeps_saved_and_explicit_hints_available(self):
+    def test_disabled_learning_keeps_saved_words_and_explicit_hints_available(self):
         store.learn_vocabulary('deadline في React', 'ديدلاين في React')
         store.set_self_learning(False)
         process = Mock(returncode=0)
@@ -124,8 +134,8 @@ class VocabularyLearning(unittest.TestCase):
                 patch.object(translate, 'codex_text', return_value='راجع React'):
             speech.transcribe(b'\x1aE\xdf\xa3fake', 'audio/webm', 'ExplicitName')
         keywords = json.loads(process.communicate.call_args.args[0].split(b'\n', 1)[0])['keywords']
-        self.assertEqual(keywords[0], 'ExplicitName')
-        self.assertIn('deadline', keywords)
+        self.assertEqual(keywords, ['ExplicitName'])
+        self.assertIn('deadline', store.personal_vocabulary()['words'])
         store.forget_vocabulary()
         self.assertFalse(store.self_learning_enabled())
 

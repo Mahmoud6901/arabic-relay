@@ -16,7 +16,7 @@ import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import aliases, engine_host, incremental, locate, models, paths, store
+from . import aliases, engine_host, incremental, local_translator, locate, models, paths, store
 
 
 TRANSCRIBE_LOCK = threading.Lock()
@@ -393,8 +393,8 @@ def parse_keywords(vocabulary):
     keywords = [word.strip() for word in vocabulary.replace('\n', ',').split(',') if word.strip()]
     if len(keywords) > 40 or any(len(word) > 80 or any(c in word for c in '<>\r\n') for word in keywords):
         raise ValueError('Use up to 40 short vocabulary hints, separated by commas.')
-    # Explicit hints have priority. Keep Whisper's context short to avoid over-biasing it.
-    return list(dict.fromkeys(keywords + store.personal_vocabulary()['words']))[:40]
+    # Only hints the user typed reach Whisper. Learned English words pushed it to write mixed speech as English.
+    return list(dict.fromkeys(keywords))
 
 
 def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
@@ -455,6 +455,24 @@ def apply_aliases(response, rules=None):
     return response
 
 
+DOUBTFUL_WORD = 0.5
+HARD_TO_HEAR = -0.4          # a segment's average log probability; lower on every test clip with wrong or missing words
+
+
+def doubtful_runs(segments):
+    """Runs of two or more words recognition doubted. One alone says little: right words often score under 0.1."""
+    runs, run = [], []
+    for word in [word for segment in segments for word in segment.get('words') or []] + [{}]:
+        chance = word.get('probability')
+        if chance is not None and chance < DOUBTFUL_WORD:
+            run.append(word.get('text', ''))
+            continue
+        if len(run) > 1:
+            runs.append(''.join(run).strip())
+        run = []
+    return runs
+
+
 def whisper_response(result, folder, inline_mode, rules=None):
     response = transcript_result(result.get('text'), models.model_label(folder))
     apply_aliases(response, rules)
@@ -465,6 +483,9 @@ def whisper_response(result, folder, inline_mode, rules=None):
         response['issues'] = [{'code': 'asr_uncertain', 'message': 'A phrase may have been recognized incorrectly. Replay or correct the source.'}
                               for row in response['segments'] if (row.get('avg_logprob') is not None and row['avg_logprob'] < -1)
                               or (row.get('compression_ratio') is not None and row['compression_ratio'] > 2.4)]
+        # Warnings only: fluent English can still be a mishearing, and pasting never presses Enter.
+        response['doubtfulWords'] = doubtful_runs(response['segments'])
+        response['hardToHear'] = any(row.get('avg_logprob') is not None and row['avg_logprob'] < HARD_TO_HEAR for row in response['segments'])
     if result.get('fallback'):
         response['notice'] = 'The GPU was unavailable, so this recording ran on the CPU.'
     return response
@@ -600,6 +621,8 @@ def stream_start(job_id, inline_mode=False, vocabulary=''):
         engine_host.HOST.release_hold()
         TRANSCRIBE_LOCK.release()
         return {'accepted': False, 'reason': 'busy'}
+    if inline_mode:
+        local_translator.warm()      # ready by the time this recording stops, unless it is a very short one
     return {'accepted': True, 'engine': engine_host.HOST.status()}
 
 
@@ -614,31 +637,39 @@ def stream_chunk(job_id, seq, payload):
         raise
 
 
+WHOLE_READING_SECONDS = 12
+
+
 def stream_finish(job_id, last_seq, total_samples):
     if type(last_seq) is not int or type(total_samples) is not int:
         raise ValueError('Invalid recording request.')
     job = incremental.REGISTRY.get(job_id)
     stopped = time.monotonic()
     try:
-        result, reason = job.finish(total_samples, last_seq, timeout=90)
+        # One reading of the whole recording keeps Arabic words that passes lose in mixed speech. It takes over 1.4 s
+        # beyond WHOLE_READING_SECONDS, and far longer on a CPU, so those recordings keep what their passes read.
+        whole = job.on_gpu() and total_samples <= WHOLE_READING_SECONDS * incremental.RATE
+        result, reason = job.finish(total_samples, last_seq, timeout=90, whole=whole)
+        planned = reason == incremental.WHOLE_READING
         if result is None:
             if job.cancelled.is_set():
                 raise ValueError('This recording was cancelled.')
             pcm = bytes(job.pcm)
             if not pcm:
                 raise ValueError('No speech was detected. Record again or type your transcript.')
-            logging.info('Incremental dictation: whole-recording fallback (%s)', reason.split(':')[0])
+            if not planned:
+                logging.info('Incremental dictation: whole-recording fallback (%s)', reason.split(':')[0])
             # The authoritative recording, decoded whole with the baseline settings for this writing mode.
             result = engine_request(job.key, {'format': 'pcm16', 'keywords': job.keywords,
                                               **({'inline': True} if job.inline else {})}, pcm, cancel_event=job.cancelled)
         response = whisper_response(result, Path(job.key[0]), job.inline, job.rules)
         done = time.monotonic()
         times = job.times
-        response['incremental'] = {'used': reason is None, 'passes': len(job.windows),
+        response['incremental'] = {'used': reason is None or planned, 'passes': len(job.windows),
                                    'finalDecode': job.final_decode if reason is None else 'whole',
                                    'tailSeconds': round(job.tail_seconds, 2) if reason is None else None,
-                                   'fallbackReason': reason.split(':')[0] if reason else None}
-        response['timings'] = {'path': 'incremental' if reason is None else 'incremental-fallback',
+                                   'fallbackReason': reason.split(':')[0] if reason and not planned else None}
+        response['timings'] = {'path': 'incremental' if reason is None else 'incremental-whole' if planned else 'incremental-fallback',
                                'stopToFinalMs': round((done - stopped) * 1000),
                                'firstPartialMs': round((times['firstPartial'] - times['start']) * 1000) if 'firstPartial' in times else None,
                                'passInferenceMs': job.inference_ms[-20:]}
@@ -659,11 +690,12 @@ def stream_cancel(job_id):
 
 
 def shutdown_engine():
-    """App quit: discard an unfinished recording job and stop the reusable worker."""
+    """App quit: discard an unfinished recording job, stop the reusable worker and free the local translator."""
     job = incremental.REGISTRY.job
     if job is not None:
         release_stream(job)
     engine_host.HOST.stop()
+    local_translator.unload()
 
 
 def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):

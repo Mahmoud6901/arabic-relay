@@ -366,7 +366,7 @@ def translate(arabic, original=''):
     if notices:
         result['notice'] = notices[0]
     try:
-        result['vocabulary'] = store.learn_vocabulary(applied['text'], original or applied['original'])
+        result['vocabulary'] = store.learn_vocabulary(applied['text'], original)
         result['selfLearning'] = store.self_learning_enabled()
     except sqlite3.Error:
         result['learningError'] = 'The English draft is ready, but personal vocabulary could not be saved.'

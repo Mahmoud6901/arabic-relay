@@ -15,7 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import __version__, aliases, direct_sessions, diagnostics, firstrun, history, locate, paths, speech, store, t3, translate, translators, updates
-from . import inline
+from . import inline, local_translator
 
 ROOT = paths.ROOT
 PORT = int(os.environ.get('ARABIC_RELAY_PORT', '8788'))
@@ -96,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
                                      'promptChoice': (choice := translate.prompt_choice()),
                                      'promptLabel': translators.label(choice), 'missingTools': locate.missing_tools(),
                                      'translator': bool(locate.tool_path('codex') or locate.tool_path('claude'))})
+            if path.path == '/api/local-translator':
+                return self.respond(local_translator.status())
             if path.path == '/api/history':
                 return self.respond(history.entries())
             if path.path == '/api/translators':
@@ -222,6 +224,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(store.forget_vocabulary())
             if self.path == '/api/self-learning':
                 return self.respond(store.set_self_learning(body.get('enabled')))
+            if self.path == '/api/local-translator':
+                return self.respond(local_translator.set_enabled(body.get('enabled')))
             if self.path == '/api/auto-spelling':
                 return self.respond(store.set_auto_spelling(body.get('enabled')))
             if self.path == '/api/history/delete':

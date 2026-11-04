@@ -85,6 +85,66 @@ const ready=(body,text)=>({status:'ready',requestId:body.requestId,revision:body
  // Plain English edits stay local and never start the translator.
  await edit(app.nodes.get('english'),'Keep my exact English.');
  await new Promise(r=>setTimeout(r,1300));assert.equal(app.posted('/api/inline').length,1);
+ // One ambiguous phrase keeps the other translations on screen, and the Arabic left behind still blocks sending.
+ app=boot({storedMode:'inline',inlineHandler:async(path,body)=>path==='/api/inline'?{status:'needs_review',requestId:body.requestId,revision:body.revision,workingText:body.text,outputText:null,partialText:'Please review it, it is جامد.',replacements:[],issues:[{code:'ambiguous_span',message:'This phrase needs context or a source correction.'}]}:{}});
+ await flush();await edit(app.nodes.get('english'),'Please راجع it, it is جامد.');await app.nodes.get('translate').click();await flush();
+ assert.equal(app.nodes.get('english').value,'Please review it, it is جامد.');
+ assert.equal(app.nodes.get('inlineSource').value,'Please راجع it, it is جامد.');
+ assert.match(app.nodes.get('inlineStatus').textContent,/needs context/);
+ vm.runInContext("captureId='capture-test';update();",app.context);assert.equal(app.nodes.get('send').disabled,true);
+ // Likely mishearing is named next to the result, without blocking the paste.
+ const recognised=async(reading,output)=>{
+  const heard=boot({storedMode:'inline',inlineHandler:async(path,body)=>path==='/api/inline'?ready(body,output):{status:'ready',proof:{test:true}}});await flush();
+  heard.context.acceptInlineRecognition(reading);vm.runInContext("inlineAutoPrepare=false;captureId='capture-test';",heard.context);await heard.nodes.get('translate').click();await flush();return heard;
+ };
+ let heard=await recognised({text:'Can you check why do I want it',doubtfulWords:['why do I'],hardToHear:true,issues:[]},'Can you check why do I want it');
+ assert.match(heard.nodes.get('inlineStatus').textContent,/^Check “why do I”: it may have been misheard\. /);
+ assert.equal(heard.nodes.get('inlineWarning').hidden,true);assert.equal(heard.nodes.get('send').disabled,false);
+ heard=await recognised({text:'Because the client',doubtfulWords:['a b','c d'],issues:[]},'Because the client');
+ assert.match(heard.nodes.get('inlineStatus').textContent,/^Check “a b”, “c d”: they may have been misheard\. /);
+ heard=await recognised({text:'Because the client',doubtfulWords:[],hardToHear:true,issues:[]},'Because the client');
+ assert.match(heard.nodes.get('inlineStatus').textContent,/^This recording was hard to hear\. Check it against what you said\. /);
+ // Editing the text takes the warning away; a clear recording never shows one.
+ await edit(heard.nodes.get('english'),'Because the client wants it.');await heard.nodes.get('translate').click();await flush();
+ assert.doesNotMatch(heard.nodes.get('inlineStatus').textContent,/hard to hear/);
+ heard=await recognised({text:'Please fix it.',doubtfulWords:[],hardToHear:false,issues:[]},'Please fix it.');
+ assert.match(heard.nodes.get('inlineStatus').textContent,/^Ready to review\./);
+ // A stretch rewritten from Latin-letter Arabic is a best guess, and the status says so; an unchanged one is not.
+ const romanized=async(output)=>{
+  const shown=boot({storedMode:'inline',inlineHandler:async(path,body)=>path==='/api/inline'?{...ready(body,output),translator:'online',spans:[{id:'s1',romanized:true}]}:{}});
+  await flush();await edit(shown.nodes.get('english'),"Raja'un the code.");await shown.nodes.get('translate').click();await flush();return shown;
+ };
+ // It can be confidently wrong ("They went back" for "review"), so it never pastes without an explicit OK.
+ app=await romanized('Review the code.');vm.runInContext("captureId='capture-test';update();",app.context);
+ assert.match(app.nodes.get('inlineStatus').textContent,/^Part of this was misheard, so its translation is a best guess\. Check it\. /);
+ assert.equal(app.nodes.get('english').value,'Review the code.');
+ assert.equal(app.nodes.get('inlineWarning').hidden,false);assert.equal(app.nodes.get('send').disabled,true);
+ app.nodes.get('inlineAcknowledge').checked=true;await app.nodes.get('inlineAcknowledge').listeners.change();
+ assert.equal(app.nodes.get('send').disabled,false);
+ app=await romanized("Raja'un the code.");vm.runInContext("captureId='capture-test';update();",app.context);
+ assert.match(app.nodes.get('inlineStatus').textContent,/^Ready to review\./);
+ assert.equal(app.nodes.get('inlineWarning').hidden,true);assert.equal(app.nodes.get('send').disabled,false);
+ // The status says when nothing left this computer.
+ app=boot({storedMode:'inline',inlineHandler:async(path,body)=>path==='/api/inline'?{...ready(body,'Please review it.'),translator:'local'}:{}});
+ await flush();await edit(app.nodes.get('english'),'Please راجع it.');await app.nodes.get('translate').click();await flush();
+ assert.match(app.nodes.get('inlineStatus').textContent,/^Translated on this computer\. Ready to review\./);
+ // The setting: what it says depends on whether the model is installed; changing it saves it.
+ const setting=async(state)=>{
+  const shown=boot({storedMode:'inline',localTranslator:state});await flush();await flush();await flush();return shown;
+ };
+ app=await setting({enabled:true,installed:true,model:'gemma4:e4b'});
+ assert.equal(app.nodes.get('localTranslator').checked,true);assert.equal(app.nodes.get('localTranslator').disabled,false);
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^On: gemma4:e4b is ready\./);
+ assert.match(app.nodes.get('modeHelp').textContent,/on this computer/);
+ app=await setting({enabled:true,installed:false,model:'gemma4:e4b'});
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/ollama pull gemma4:e4b/);
+ assert.match(app.nodes.get('modeHelp').textContent,/Uses your selected model online/);
+ app=await setting({enabled:false,installed:true,model:'gemma4:e4b'});
+ assert.equal(app.nodes.get('localTranslator').checked,false);
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^Off: /);
+ assert.match(app.nodes.get('modeHelp').textContent,/Uses your selected model online/);
+ app.nodes.get('localTranslator').checked=true;await app.nodes.get('localTranslator').listeners.change();await flush();
+ assert.deepEqual(app.posted('/api/local-translator').filter(r=>r.body).map(r=>r.body),[{enabled:true}]);
  console.log('Inline mode: persistence, revision races, cancellation, one-click exact sending, source edits and recognition warnings passed.');
  process.exit(0);
 })().catch(e=>{console.error(e);process.exit(1);});

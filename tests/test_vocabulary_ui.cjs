@@ -91,6 +91,7 @@ const count=url=>requests.filter(r=>r.url===url).length;
  assert.equal(nodes.get('stageStatus').hidden,false);
  assert.ok(nodes.get('stageStatus').textContent.includes('Transcript 1.2 s after Stop'),nodes.get('stageStatus').textContent);
  assert.ok(nodes.get('stageStatus').textContent.includes('transcribed while you spoke'));
+ assert.ok(context.speechSummary({timings:{stopToFinalMs:1100},incremental:{used:true,passes:6,finalDecode:'whole',tailSeconds:null,fallbackReason:null}}).endsWith('Transcript 1.1 s after Stop · whole recording after Stop'));
  // 3. Prompt preparation keeps the original source and shows the replaced form.
  await nodes.get('clearDraft').click();
  nodes.get('arabic').value='اعمل ريدزاين';await nodes.get('translate').click();await flush(6);

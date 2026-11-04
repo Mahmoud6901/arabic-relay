@@ -9,6 +9,9 @@ Stop the latest reading is usually final already and no decode remains; otherwis
 
 Anything uncertain (a failed decode, inconsistent timestamps, audio that arrived out of order, a buffer that never
 confirms) falls back to decoding the whole recording with the baseline settings.
+
+Passes read a recording piece by piece and lose Arabic words in mixed speech, so a short recording on the GPU is read
+once more, whole, at Stop (see speech.stream_finish). What the passes heard is then only the provisional text.
 """
 import logging
 import re
@@ -34,6 +37,7 @@ KEPT_RESULTS = 3                     # older passes keep only their position, no
 JOB_ID = re.compile(r'[A-Za-z0-9_-]{20,100}')
 LANGUAGE = re.compile(r'[a-z]{2,3}')
 IDLE_EXPIRY = 45                     # seconds without a chunk before an unfinished recording is discarded
+WHOLE_READING = 'whole reading'      # why passes end when Stop will read the whole recording: expected, not a failure
 
 
 class Ambiguous(Exception):
@@ -369,13 +373,22 @@ class Job:
                 self.times.setdefault('firstPartial', time.monotonic())
                 self.condition.notify_all()
 
-    def finish(self, total_samples, last_seq, timeout):
-        """Close input and wait (bounded) for the final reading; returns (result or None, reason)."""
+    def on_gpu(self):
+        """False once a pass reports that the worker moved to the CPU after a device fault."""
+        with self.condition:
+            last = next((w['result'] for w in reversed(self.windows) if 'result' in w), {})
+        return self.key[1] == 'cuda' and last.get('device', 'GPU') == 'GPU'
+
+    def finish(self, total_samples, last_seq, timeout, whole=False):
+        """Close input and wait (bounded) for the final reading; returns (result or None, reason). With `whole`, the
+        caller will read the whole recording itself: a pass in flight may end, but no tail pass starts."""
         with self.condition:
             if self.cancelled.is_set():
                 raise ValueError('This recording was cancelled.')
             if last_seq != self.next_seq - 1 or total_samples != len(self.pcm) // 2:
                 self.stop_partials('missing audio')
+            if whole:
+                self.stop_partials(WHOLE_READING)
             self.closed = True
             self.times['stop'] = time.monotonic()
             self.condition.notify_all()

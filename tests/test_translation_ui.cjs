@@ -12,7 +12,7 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null}={}){
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null,localTranslator=null}={}){
  const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
  if(provider)storage.set('relay-dictation-provider',provider);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
@@ -34,6 +34,7 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
    else if(url==='/api/tool-path')data={kind:body.kind,path:body.path};
    else if(url==='/api/translate')data=translate;
    else if(url.startsWith('/api/inline'))data=await inlineHandler?.(url,body)||{};
+   else if(url==='/api/local-translator')data={...localTranslator,...body};
    else if(url==='/api/send')data={deliveries:[]};
    else data={};
    return {ok,json:async()=>data};}});

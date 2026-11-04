@@ -256,6 +256,38 @@ class Jobs(unittest.TestCase):
         self.assertLess(seconds[-1], 6)                           # confirmed words are not decoded again
         self.assertIn('سلام', inner.calls[-1]['context'])         # they are the tail pass's prompt instead
 
+    def test_stop_for_a_whole_reading_waits_for_the_pass_in_flight_and_starts_no_tail(self):
+        audio = scripted_audio(9)
+        inner, gate, started = FakeRecognizer(audio), threading.Event(), threading.Event()
+
+        def gated(header, payload, cancel_event):
+            started.set()
+            gate.wait(5)
+            return inner(header, payload, cancel_event)
+        job = incremental.Job('job-' + 'w' * 20, False, [], ('model', 'cuda'), gated)
+        job.append(0, audio[:2 * RATE * 2])
+        self.assertTrue(started.wait(5))              # a pass is in flight when the user stops
+        seq = 0
+        for start in range(2 * RATE * 2, len(audio), RATE):
+            seq += 1
+            job.append(seq, audio[start:start + RATE])
+        outcome = {}
+        finisher = threading.Thread(target=lambda: outcome.update(value=job.finish(len(audio) // 2, seq, timeout=10, whole=True)))
+        finisher.start()
+        time.sleep(.05)
+        self.assertTrue(finisher.is_alive())          # the engine serves one request at a time
+        gate.set()
+        finisher.join(10)
+        self.assertEqual(outcome['value'], (None, incremental.WHOLE_READING))
+        self.assertEqual(len(inner.calls), 1)
+        self.assertEqual(bytes(job.pcm), audio)       # all of it is still there to read
+
+    def test_missing_audio_stays_the_reason_when_a_whole_reading_was_requested(self):
+        audio = scripted_audio(9)
+        job = incremental.Job('job-' + 'x' * 20, False, [], ('model', 'cuda'), FakeRecognizer(audio))
+        last = feed(job, audio)
+        self.assertEqual(job.finish(len(audio) // 2 + 1, last, timeout=10, whole=True), (None, 'missing audio'))
+
     def test_inline_receives_word_times_on_the_recording_timeline(self):
         audio = scripted_audio()
         job = incremental.Job('job-' + 'k' * 20, True, [], ('model', 'cuda'), FakeRecognizer(audio))

@@ -6,7 +6,7 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 
-from arabic_relay import inline, speech, speech_worker, translate, t3
+from arabic_relay import inline, local_translator, speech, speech_worker, translate, t3
 
 
 def body(text, **extra):
@@ -18,6 +18,75 @@ def reply(req, words):
                        'replacements': [{'span_id': s['id'], 'source_text': s['exact_source'],
                                          'status': 'translated', 'replacement_text': word}
                                         for s, word in zip(req['spans'], words)]})
+
+
+class LocalTranslation(unittest.TestCase):
+    """Which translator answers. The stand-ins replace only the two translators; validation stays real."""
+
+    def setUp(self):
+        inline.JOBS.clear()
+        for target, name in ((local_translator, 'translate'), (local_translator, 'enabled'), (translate, 'codex_text')):
+            patcher = patch.object(target, name)
+            setattr(self, name, patcher.start())
+            self.addCleanup(patcher.stop)
+        self.enabled.return_value = True
+
+    def test_the_local_translator_answers_first_and_nothing_goes_online(self):
+        self.translate.side_effect = lambda req: reply(req, ['review', 'make sure of'])
+        result = inline.process(body('Please راجع the page and اتأكد من it.'))
+        self.assertEqual(result['status'], 'ready')
+        self.assertEqual(result['outputText'], 'Please review the page and make sure of it.')
+        self.assertEqual(result['translator'], 'local')
+        self.codex_text.assert_not_called()
+
+    def test_the_online_model_answers_when_the_local_translator_cannot(self):
+        online = lambda req, *a, **k: reply(req, ['review'])
+        self.codex_text.side_effect = online
+        replies = [local_translator.Unavailable('stopped'), lambda req: 'not json', lambda req: reply(req, ['review MapView']),
+                   lambda req: reply(req, ['راجع'])]
+        for answer in replies:
+            with self.subTest(answer=answer):
+                self.codex_text.reset_mock()
+                self.translate.side_effect = answer
+                result = inline.process(body('Please راجع MapView'))
+                self.assertEqual(result['outputText'], 'Please review MapView')
+                self.assertEqual(result['translator'], 'online')
+                self.assertEqual(self.codex_text.call_count, 1)
+
+    def test_turned_off_the_local_translator_is_not_asked(self):
+        self.enabled.return_value = False
+        self.codex_text.side_effect = lambda req, *a, **k: reply(req, ['review'])
+        self.assertEqual(inline.process(body('Please راجع it'))['status'], 'ready')
+        self.translate.assert_not_called()
+
+    def test_a_named_provider_is_the_only_one_asked(self):
+        self.assertEqual(inline.process(body('Please راجع it'), lambda req: reply(req, ['review']))['status'], 'ready')
+        self.translate.assert_not_called()
+        self.codex_text.assert_not_called()
+
+    def test_arabic_in_latin_letters_goes_to_the_online_model(self):
+        # The local model confidently misreads these ("Raja'un" became "Return"), so it is not asked.
+        self.codex_text.side_effect = lambda req, *a, **k: reply(req, ['Please review it'])
+        result = inline.process(body("Please Raja'un it"))
+        self.assertEqual(result['outputText'], 'Please review it')
+        self.assertEqual(result['translator'], 'online')
+        self.translate.assert_not_called()
+        self.assertIn('romanized', self.codex_text.call_args.args[1])
+
+    def test_english_needs_no_translator(self):
+        self.assertEqual(inline.process(body('Please fix it.'))['outputText'], 'Please fix it.')
+        self.translate.assert_not_called()
+        self.codex_text.assert_not_called()
+
+    def test_a_cancelled_request_ignores_a_late_local_answer(self):
+        def cancelled_meanwhile(req):
+            inline.cancel(req['request_id'])
+            return reply(req, ['review'])
+        self.translate.side_effect = cancelled_meanwhile
+        result = inline.process(body('Please راجع it'))
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertIsNone(result['outputText'])
+        self.codex_text.assert_not_called()
 
 
 class InlineCore(unittest.TestCase):
@@ -89,6 +158,79 @@ class InlineCore(unittest.TestCase):
         self.assertEqual(provider.call_count, 1)
         result = inline.process(body('Please راجع MapView'), lambda req: reply(req, ['review MapView']))
         self.assertEqual(result['issues'][0]['code'], 'anchor_duplication')
+
+    def test_good_translations_survive_an_ambiguous_phrase(self):
+        text = 'Please راجع the page, it is جامد.'
+        req, _ = inline.request(body(text))
+        answer = json.loads(reply(req, ['review', 'unused']))
+        answer['replacements'][1] = {'span_id': 's2', 'source_text': 'جامد', 'status': 'needs_review', 'reason_code': 'ambiguous_span'}
+        result = inline.process(body(text), lambda req: json.dumps(answer))
+        self.assertEqual(result['status'], 'needs_review')
+        self.assertIsNone(result['outputText'])                       # still not sendable: Arabic remains
+        self.assertEqual(result['partialText'], 'Please review the page, it is جامد.')
+
+    def test_only_an_ambiguous_phrase_gives_a_partial_result(self):
+        text = 'Please راجع MapView, it is جامد.'
+        req, _ = inline.request(body(text))
+        answer = json.loads(reply(req, ['review MapView', 'unused']))
+        answer['replacements'][1] = {'span_id': 's2', 'source_text': 'جامد', 'status': 'needs_review', 'reason_code': 'ambiguous_span'}
+        self.assertIsNone(inline.process(body(text), lambda req: json.dumps(answer))['partialText'])
+        self.assertIsNone(inline.process(body(text), lambda req: 'not json')['partialText'])
+        self.assertIsNone(inline.process(body('Please fix it.'), Mock())['partialText'])
+
+    def test_arabic_punctuation_between_translated_phrases_becomes_english(self):
+        source = 'متمسحش الـ database، اعمل backup؟'
+        result = inline.process(body(source), lambda req: reply(req, ["Don't delete the", 'make']))
+        self.assertEqual(result['outputText'], "Don't delete the database, make backup?")
+        result = inline.process(body('راجع `a،b`، تمام'), lambda req: reply(req, ['Review', 'okay']))
+        self.assertEqual(result['outputText'], 'Review `a،b`, okay')       # a protected literal keeps its own
+
+    def test_arabic_in_latin_letters_is_a_phrase_to_translate(self):
+        # Recognition that writes this also breaks the words around it, and the word alone misleads: Raja'un alone
+        # reads as "please", while the speaker said "review". So the translator gets the whole broken stretch.
+        source = "Please. Raja'un. The login page end. Ata'akadu min. The error messages."
+        req, issues = inline.request(body(source))
+        self.assertEqual(issues, [])
+        self.assertEqual([s['exact_source'] for s in req['spans']], [source])
+        self.assertTrue(req['spans'][0]['romanized'])
+        result = inline.process(body(source), lambda req: reply(req, ['Please review the login page and check the error messages.']))
+        self.assertEqual(result['outputText'], 'Please review the login page and check the error messages.')
+
+    def test_a_sound_sentence_next_to_arabic_in_latin_letters_stays_exact(self):
+        sound = 'I already told my manager about the whole thing yesterday.'
+        source = f"{sound} Raja'un the login page. Then stop."
+        req, _ = inline.request(body(source))
+        self.assertEqual([s['exact_source'] for s in req['spans']], ["Raja'un the login page. Then stop."])
+        result = inline.process(body(source), lambda req: reply(req, ['Review the login page, then stop.']))
+        self.assertEqual(result['outputText'], f'{sound} Review the login page, then stop.')
+
+    def test_a_literal_inside_a_stretch_of_latin_letter_arabic_stays_protected(self):
+        req, _ = inline.request(body("Raja'un src/app/map.ts now."))
+        self.assertEqual([s['exact_source'] for s in req['spans']], ["Raja'un", 'now.'])
+        result = inline.process(body("Raja'un src/app/map.ts now."), lambda req: reply(req, ['Review', 'now.']))
+        self.assertEqual(result['outputText'], 'Review src/app/map.ts now.')
+
+    def test_phrases_in_either_script_keep_their_order(self):
+        first = 'راجع الكود كله لو سمحت قبل ما نبدأ الشغل النهارده يا ريت.'
+        second = "Then go to the Ata'akadu page and read every single line."
+        third = 'Please راجع it carefully today before we ship the whole thing.'
+        req, _ = inline.request(body(f'{first} {second} {third}'))
+        self.assertEqual([(s['id'], s['exact_source']) for s in req['spans']],
+                         [('s1', first[:-1]), ('s2', second), ('s3', 'راجع')])
+        self.assertEqual([s.get('romanized', False) for s in req['spans']], [False, True, False])
+
+    def test_arabic_letters_inside_a_stretch_of_latin_letter_arabic_are_part_of_it(self):
+        source = "Please راجع and Ata'akadu min الكود"
+        self.assertEqual([s['exact_source'] for s in inline.request(body(source))[0]['spans']], [source])
+
+    def test_english_apostrophes_stay_english(self):
+        for source in ("I didn't know it's what we'll do, they're sure I've said I'd go", "O'Brien and D'Angelo at 5 o'clock, ma'am",
+                       "rock'n'roll, y'all", "the users' data and 'quoted' words", 'I didn’t know it’s fine', "Hawai'i", 'getUser\'s `Raja\'un`'):
+            with self.subTest(source=source):
+                self.assertEqual(inline.request(body(source))[0]['spans'], [])
+
+    def test_a_word_that_looks_romanized_never_blocks_finished_english(self):
+        self.assertEqual(inline.manual(body('راجع', finalText="We visited Xi'an"))['status'], 'ready')
 
     def test_reject_invalid_schemas_and_only_one_retry(self):
         req, _ = inline.request(body('Please راجع MapView'))

@@ -42,6 +42,17 @@ function native(app,{failure=false,available=true}={}){
  await app.context.window.relayQuickToggle();
  n.get('flowCapture').value='راجع الصفحة';n.get('flowCapture').listeners.input({inputType:'insertFromPaste'});
  await ready(app);assert.equal(calls.length,0);assert.equal(n.get('english').value,'Review the page.');
+ // A shortcut recording pastes at once, and the window stays just long enough to show a likely mishearing.
+ app=boot({quick:true,storedMode:'inline',status:{nativeDesktop:true},inlineHandler:async(path,body)=>path==='/api/inline'?{status:'ready',requestId:body.requestId,revision:body.revision,workingText:body.text,outputText:body.text,issues:[],replacements:[]}:{status:'ready',proof:{test:true}}});
+ calls=native(app);await ready(app);n=app.nodes;
+ vm.runInContext("inlineDoubtMs=1500;captureId='one-recording';pasteArmed=true;pasteInputReceived=true;",app.context);
+ app.context.acceptInlineRecognition({text:'Why do I want it',doubtfulWords:['Why do I'],issues:[]});
+ vm.runInContext('inlineAutoPrepare=false;prepareInline();',app.context);await ready(app);
+ assert.equal(calls.length,1,'The paste does not wait for the warning');
+ assert.match(n.get('notice').textContent,/Check “Why do I”: it may have been misheard\./);
+ assert.doesNotMatch(n.get('notice').className,/success/,'The shortcut window hides success notices');
+ await new Promise(r=>setTimeout(r,1600));
+ assert.equal(calls[1],'closed');
  app=boot({status:{nativeDesktop:true}});calls=native(app);await ready(app);
  app.nodes.get('english').value='Manually edited draft';app.nodes.get('english').listeners.input();
  await ready(app);assert.equal(calls.length,0);

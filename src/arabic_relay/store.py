@@ -91,9 +91,10 @@ def set_auto_spelling(enabled):
 
 
 def learn_vocabulary(reviewed, original=''):
-    # Only the reviewed source teaches vocabulary; the generated translation cannot teach itself.
-    words = {word.rstrip('.:/') for word in re.findall(ENGLISH_WORD, reviewed)}
-    words = {word for word in words if 2 <= len(word) <= 80}
+    # Only what a person wrote teaches vocabulary: not the generated translation, and not speech recognition's own
+    # words, which may be wrong. With a transcript to compare against, that means the words the user changed.
+    written, heard = ({word.rstrip('.:/') for word in re.findall(ENGLISH_WORD, text)} for text in (reviewed, original))
+    words = {word for word in written - heard if 2 <= len(word) <= 80}
     corrections = []
     tokens = r'[\u0621-\u064a\u0660-\u0669\u0671-\u06d3ـ]+|' + ENGLISH_WORD
     before, after = re.findall(tokens, original), re.findall(tokens, reviewed)
