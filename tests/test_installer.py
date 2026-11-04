@@ -21,9 +21,13 @@ class Installer(unittest.TestCase):
     def test_smoke_never_runs_next_to_a_real_install(self):
         # The smoke install shares the AppId: its uninstall would remove the real shortcut and Apps entry.
         build = (ROOT / 'scripts' / 'build.ps1').read_text(encoding='utf-8')
-        self.assertIn('{B981CB91-79B0-4049-ABF8-C2A11A94560B}_is1', build)
-        releasing = (ROOT / 'docs' / 'RELEASING.md').read_text(encoding='utf-8').split('## Tag and sign')[0]
-        self.assertNotIn('-Smoke', releasing)
+        smoke = build.split('if ($Smoke) {', 1)[1]
+        # Release documentation is local-only. Check the executable guard before the install instead.
+        guard = re.search(
+            r"if \(Test-Path 'HKCU:[^']*\{B981CB91-79B0-4049-ABF8-C2A11A94560B\}_is1'\) \{\s*"
+            r"throw 'Arabic Relay is installed here;[^']*'\s*\}", smoke)
+        self.assertIsNotNone(guard)
+        self.assertLess(guard.end(), smoke.index('Start-Process $setup'))
 
 
 if __name__ == '__main__':
