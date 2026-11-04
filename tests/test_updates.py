@@ -140,7 +140,7 @@ class Updates(unittest.TestCase):
             worker.start()
             held.wait(5)
             try:
-                with self.assertRaisesRegex(ValueError, '^Finish recording, transcribing, translating or sending first, then update.$'):
+                with self.assertRaisesRegex(ValueError, '^خلّص التسجيل أو التجهيز الأول، وبعدها حدّث.$'):
                     updates.install(True)
             finally:
                 release.set()
@@ -149,7 +149,7 @@ class Updates(unittest.TestCase):
     def test_install_reverifies(self):
         updates.check()
         (self.folder() / 'ArabicRelay-Setup-0.2.0.exe').write_bytes(b'X' + SETUP[1:])
-        with self.assertRaisesRegex(ValueError, 'signature'):
+        with self.assertRaisesRegex(ValueError, 'فحص التوقيع'):
             updates.install(True)
         self.assertIsNone(updates.state()['ready'])
         self.assertFalse((self.folder() / 'ArabicRelay-Setup-0.2.0.exe').exists())

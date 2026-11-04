@@ -176,16 +176,16 @@ class TranslationBoundary(unittest.TestCase):
         translate.set_prompt_choice('codex', 'gpt-old', 'low')
         with patch.object(locate, 'tool_path', return_value=Path('codex.exe')), \
                 patch.object(translate.subprocess, 'Popen', side_effect=[self.codex_run(gone, code=1), self.codex_run(gone, code=1)]) as launch:
-            with self.assertRaisesRegex(ValueError, r"^Codex could not return a draft\. Check its sign-in and plan limits, or type English yourself\.$"):
+            with self.assertRaisesRegex(ValueError, r"^Codex ما رجّعش نص\."):
                 translate.translate('نص')
         self.assertEqual(launch.call_count, 2)
         self.assertFalse(translate.TRANSLATE_LOCK.locked())
 
     def test_usage_and_login_messages(self):
         cases = (('codex', "You've hit your usage limit.", 'Your Codex usage limit was reached. Switch to Claude Code in Settings or try later.'),
-                 ('codex', '401 Unauthorized', "Codex isn't signed in. Open a terminal and run codex login."),
+                 ('codex', '401 Unauthorized', "Codex مش مسجّل الدخول. افتح الطرفية واكتب codex login."),
                  ('claude', 'Rate limit reached', 'Your Claude Code usage limit was reached. Switch to Codex in Settings or try later.'),
-                 ('claude', 'Not logged in · Please run /login', "Claude Code isn't signed in. Open a terminal and run claude, then type /login."))
+                 ('claude', 'Not logged in · Please run /login', "Claude Code مش مسجّل الدخول. افتح الطرفية واكتب claude وبعدها /login."))
         for tool, text, message in cases:
             translate.set_prompt_choice(tool, '', 'low')
             run = self.codex_run(ERROR(text), code=1) if tool == 'codex' else self.claude_run(text, error=True, code=1)
@@ -206,7 +206,7 @@ class TranslationBoundary(unittest.TestCase):
         process.communicate.return_value = ('', 'WARN Model metadata for `gpt-custom` not found. Defaulting to fallback metadata.\n401 Unauthorized')
         with patch.object(locate, 'tool_path', return_value=Path('codex.exe')), \
                 patch.object(translate.subprocess, 'Popen', return_value=process) as launch:
-            with self.assertRaisesRegex(ValueError, r"^Codex isn't signed in\."):
+            with self.assertRaisesRegex(ValueError, r"^Codex مش مسجّل الدخول\."):
                 translate.translate('نص')
         launch.assert_called_once()
         self.assertEqual(translate.prompt_choice()['model'], 'gpt-custom')
@@ -219,21 +219,21 @@ class TranslationBoundary(unittest.TestCase):
 
     def test_neither_tool_installed(self):
         with patch.object(locate, 'tool_path', return_value=None), patch.object(translate.subprocess, 'Popen') as launch:
-            with self.assertRaisesRegex(ValueError, r'^Install Codex CLI or Claude Code to prepare English prompts\. You can still type English yourself\.$'):
+            with self.assertRaisesRegex(ValueError, r'^ثبّت Codex CLI أو Claude Code عشان تجهيز البرومبت يشتغل\.$'):
                 translate.translate('نص')
         launch.assert_not_called()
 
     def test_chosen_tool_missing_other_installed(self):
         translate.set_prompt_choice('claude', '', 'low')
         with patch.object(locate, 'tool_path', side_effect=lambda kind: Path('codex.exe') if kind == 'codex' else None):
-            with self.assertRaisesRegex(ValueError, r"^Claude Code isn't installed\. Choose Codex in Settings, or type English yourself\.$"):
+            with self.assertRaisesRegex(ValueError, r"^Claude Code مش متثبّت\. اختار Codex من تبويب النماذج\.$"):
                 translate.translate('نص')
 
     def test_timeout_message(self):
         process = Mock()
         process.communicate.side_effect = [subprocess.TimeoutExpired('codex', 90), ('', '')]
         with patch.object(locate, 'tool_path', return_value=Path('codex.exe')), patch.object(translate.subprocess, 'Popen', return_value=process):
-            with self.assertRaisesRegex(ValueError, r'^Text preparation took too long\. Try a lower effort\.$'):
+            with self.assertRaisesRegex(ValueError, r'^التجهيز خد وقت طويل\. جرّب مجهود أقل\.$'):
                 translate.translate('نص')
         self.assertEqual(process.communicate.call_args_list[0].kwargs['timeout'], 90)
 

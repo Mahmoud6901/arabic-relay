@@ -292,7 +292,7 @@ class InlineCore(unittest.TestCase):
         event = threading.Event()
         event.set()
         with patch.object(translate.subprocess, 'Popen', return_value=process):
-            with self.assertRaisesRegex(ValueError, 'cancelled'):
+            with self.assertRaisesRegex(ValueError, 'اتلغى التجهيز'):
                 translate.run_tool('codex', {'tool': 'codex', 'model': '', 'effort': 'low'}, ('rules', 'data'), cancel_event=event)
         process.kill.assert_called_once()
 
@@ -313,14 +313,14 @@ class InlineCore(unittest.TestCase):
         event.set()
         process = Mock()
         with patch.object(speech.subprocess, 'Popen', return_value=process):
-            with self.assertRaisesRegex(ValueError, 'cancelled'):
+            with self.assertRaisesRegex(ValueError, 'اتلغى التحويل'):
                 speech.run_worker('folder', b'audio', [], inline_mode=True, cancel_event=event)
         process.kill.assert_called_once()
         for seconds in (0, -1, 31, float('nan')):
-            with self.assertRaisesRegex(ValueError, 'budget'):
+            with self.assertRaisesRegex(ValueError, 'خلصت محاولات'):
                 speech.transcribe(b'', 'audio/wav', inline_mode=True, retry=True, retry_seconds=seconds)
         with patch.object(speech.subprocess, 'Popen', return_value=process), patch.object(speech.time, 'monotonic', side_effect=[0, 31]):
-            with self.assertRaisesRegex(ValueError, 'too long'):
+            with self.assertRaisesRegex(ValueError, 'وقت طويل'):
                 speech.run_worker('folder', b'audio', [], inline_mode=True, retry=True, cancel_event=threading.Event())
 
     def test_presentation_forms_and_negation_quantity_slots(self):

@@ -98,6 +98,8 @@ class Handler(BaseHTTPRequestHandler):
                                      'translator': bool(locate.tool_path('codex') or locate.tool_path('claude'))})
             if path.path == '/api/local-translator':
                 return self.respond(local_translator.status())
+            if path.path == '/api/local-translator/progress':
+                return self.respond(local_translator.JOB.progress())
             if path.path == '/api/history':
                 return self.respond(history.entries())
             if path.path == '/api/translators':
@@ -128,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             size = int(self.headers.get('Content-Length', 0))
             if self.path == '/api/transcribe':
                 if not 0 < size <= speech.MAX_AUDIO:
-                    raise ValueError('Keep each recording under 24 MB.')
+                    raise ValueError('التسجيل لازم يكون أقل من 24 MB.')
                 vocabulary = urllib.parse.unquote(self.headers.get('X-Relay-Vocabulary', ''))
                 options = {}
                 if self.headers.get('X-Relay-Inline') == '1':
@@ -137,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
                     rid = self.headers.get('X-Relay-Inline-Request')
                     if rid:
                         if not isinstance(rid, str) or len(rid) > 100:
-                            raise ValueError('Invalid transcription request.')
+                            raise ValueError('طلب التحويل مش صحيح.')
                         options['cancel_event'] = inline.job(rid)
                 return self.respond(speech.transcribe(self.rfile.read(size), self.headers.get('Content-Type', ''), vocabulary,
                                                self.headers.get('X-Relay-Provider', 'whisper'), **options))
@@ -146,22 +148,22 @@ class Handler(BaseHTTPRequestHandler):
                 if not 0 < size <= speech.incremental.MAX_CHUNK * 2 or self.headers.get('Content-Type') != 'application/octet-stream':
                     if 0 < size <= speech.incremental.MAX_CHUNK * 8:
                         self.rfile.read(size)   # a bounded body is drained so the client reads the error, not a reset
-                    raise ValueError('Invalid recording audio.')
+                    raise ValueError('صوت التسجيل مش سليم.')
                 try:
                     seq = int(self.headers.get('X-Relay-Stream-Seq', ''))
                 except ValueError:
-                    raise ValueError('Invalid recording audio.') from None
+                    raise ValueError('صوت التسجيل مش سليم.') from None
                 return self.respond(speech.stream_chunk(self.headers.get('X-Relay-Stream-Job'), seq, self.rfile.read(size)))
             if not 0 < size <= 100000:
-                raise ValueError('Invalid request size.')
+                raise ValueError('حجم الطلب مش صحيح.')
             body = json.loads(self.rfile.read(size))
             if not isinstance(body, dict):
-                raise ValueError('Invalid request.')
+                raise ValueError('الطلب مش صحيح.')
             if self.path == '/api/speech/prepare':
                 return self.respond(speech.prepare_worker(body.get('requestId')))
             if self.path == '/api/speech/cancel-prepare':
                 if not isinstance(body.get('requestId'), str):
-                    raise ValueError('Invalid recording request.')
+                    raise ValueError('طلب التسجيل مش صحيح.')
                 return self.respond(speech.cancel_preparation(body['requestId']))
             if self.path == '/api/stream/start':
                 return self.respond(speech.stream_start(body.get('jobId'), body.get('inline', False), body.get('vocabulary', '')))
@@ -191,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/speech-device':
                 return self.respond(speech.set_cpu_only(body.get('cpuOnly')))
             if self.path == '/api/model/delete':
-                return self.respond(speech.delete_current_model())
+                return self.respond(speech.delete_model(body.get('name')))
             if self.path == '/api/update/install':
                 return self.respond(updates.install(True))
             if self.path == '/api/update/preferences':
@@ -226,6 +228,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(store.set_self_learning(body.get('enabled')))
             if self.path == '/api/local-translator':
                 return self.respond(local_translator.set_enabled(body.get('enabled')))
+            if self.path == '/api/local-translator/pull':
+                return self.respond(local_translator.JOB.start())
+            if self.path == '/api/local-translator/cancel':
+                return self.respond(local_translator.JOB.cancel())
             if self.path == '/api/auto-spelling':
                 return self.respond(store.set_auto_spelling(body.get('enabled')))
             if self.path == '/api/history/delete':

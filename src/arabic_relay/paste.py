@@ -9,6 +9,8 @@ import time
 
 LOCK = threading.Lock()
 MAX_CLIPBOARD = 32 * 1024 * 1024
+CLIPBOARD_QUIET = .12       # seconds nobody may hold the clipboard before the paste keys go out
+CLIPBOARD_BUSY_LIMIT = .6
 
 
 class POINT(ctypes.Structure):
@@ -228,6 +230,19 @@ class Windows:
                 if handle:
                     self.kernel.GlobalFree(handle)
 
+    def settle_clipboard(self):
+        """Programs that watch the clipboard open it the moment it changes, and most apps silently give up on a paste if
+        they find it open. Wait until nobody has held it for a moment. If it stays busy, the paste goes ahead anyway."""
+        start = quiet = time.monotonic()
+        while time.monotonic() - start < CLIPBOARD_BUSY_LIMIT:
+            if self.user.OpenClipboard(None):
+                self.user.CloseClipboard()
+                if time.monotonic() - quiet >= CLIPBOARD_QUIET:
+                    return
+            else:
+                quiet = time.monotonic()
+            time.sleep(.004)
+
     def put_text(self, text):
         formats = [(13, text.encode('utf-16-le') + b'\0\0')]
         for name in ('CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard'):
@@ -288,6 +303,7 @@ class Paster:
             try:
                 if target.name.lower() in ('mstsc', 'msrdc'):
                     time.sleep(.4)
+                win.settle_clipboard()
                 win.wait_modifiers()
                 if win.sequence() != inserted:
                     raise ValueError('The clipboard changed before paste. Your prompt is preserved; copy it manually.')
@@ -306,6 +322,17 @@ class Paster:
         finally:
             if not self.pending:
                 LOCK.release()
+
+    def copy(self, text):
+        """Leaves `text` on the clipboard for the user to paste by hand; nothing restores the old clipboard."""
+        if not isinstance(text, str) or not text.strip() or len(text) > 16000 or '\0' in text:
+            raise ValueError('Prepare a prompt between 1 and 16,000 characters before pasting.')
+        win = self.windows()
+        win.open_clipboard()
+        try:
+            win.put_text(text)
+        finally:
+            win.user.CloseClipboard()
 
     def restore(self, snapshot, inserted):
         win = self.windows()

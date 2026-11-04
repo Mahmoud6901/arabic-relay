@@ -48,11 +48,11 @@ function boot({status={},replies={}}={}){
  await flush();
  n=app.nodes;
  assert.equal(n.get('crashBanner').hidden,false);
- assert.ok(html.includes('<span id="crashText">Arabic Relay closed unexpectedly last time. Copy diagnostics to include them in a GitHub issue.</span>'));
+ assert.ok(html.includes('<span id="crashText">البرنامج اتقفل فجأة آخر مرة. انسخ معلومات التشخيص وابعتها في GitHub issue.</span>'));
  await n.get('copyCrash').click();await flush();
  assert.equal(app.posted('/api/diagnostics').length,1);
  assert.deepEqual(app.clipboard,['Arabic Relay 0.1.0\nGPU: none found']);
- assert.equal(n.get('notice').textContent,'Diagnostics copied. They contain no transcripts or audio.');
+ assert.equal(n.get('notice').textContent,'اتنسخت معلومات التشخيص. مفيهاش كلام ولا صوت.');
  await n.get('dismissCrash').click();await flush();
  assert.equal(app.posted('/api/crash/dismiss').length,1);
  assert.equal(n.get('crashBanner').hidden,true);
@@ -69,12 +69,12 @@ function boot({status={},replies={}}={}){
  await flush();
  n=app.nodes;
  assert.equal(n.get('updateBanner').hidden,false);
- assert.equal(n.get('updateText').textContent,'Arabic Relay 0.2.0 is ready');
+ assert.equal(n.get('updateText').textContent,'Arabic Relay 0.2.0 جاهز');
  assert.equal(n.get('updateNotes').href,url);
- assert.equal(n.get('updateInstall').textContent,'Restart and update');
+ assert.equal(n.get('updateInstall').textContent,'أعد التشغيل وحدّث');
  assert.equal(n.get('updateInstallItem').hidden,false);
  assert.equal(n.get('updateManualItem').hidden,true);
- assert.ok(html.includes('<span id="updateNotesItem"> · <a class="text-btn" id="updateNotes" target="_blank" rel="noopener">What\'s new</a></span>'));
+ assert.ok(html.includes('<span id="updateNotesItem"> · <a class="text-btn" id="updateNotes" target="_blank" rel="noopener">الجديد</a></span>'));
  await n.get('updateInstall').click();await flush();
  assert.equal(app.posted('/api/update/install').length,1);
  assert.deepEqual(app.calls,[['quit','t']]);
@@ -86,17 +86,17 @@ function boot({status={},replies={}}={}){
  assert.equal(n.get('updateInstall').disabled,false);
 
  // The server refuses while busy: its message shows; the window stays.
- app=boot({status:{update:update({ready:'0.2.0'})},replies:{'/api/update/install':{error:'Finish recording, transcribing, translating or sending first, then update.'}}});
+ app=boot({status:{update:update({ready:'0.2.0'})},replies:{'/api/update/install':{error:'خلّص التسجيل أو التجهيز الأول، وبعدها حدّث.'}}});
  await flush();
  await app.nodes.get('updateInstall').click();await flush();
- assert.equal(app.nodes.get('notice').textContent,'Finish recording, transcribing, translating or sending first, then update.');
+ assert.equal(app.nodes.get('notice').textContent,'خلّص التسجيل أو التجهيز الأول، وبعدها حدّث.');
  assert.deepEqual(app.calls,[]);
 
  // Notify only: announced, no install button.
  app=boot({status:{update:update({mode:'notify'})}});
  await flush();
  n=app.nodes;
- assert.equal(n.get('updateText').textContent,'Arabic Relay 0.2.0 is available');
+ assert.equal(n.get('updateText').textContent,'Arabic Relay 0.2.0 متاح');
  assert.equal(n.get('updateInstallItem').hidden,true);
  assert.equal(n.get('updateNotesItem').hidden,false);
 
@@ -104,8 +104,8 @@ function boot({status={},replies={}}={}){
  app=boot({status:{update:update({available:null,failed:'0.2.0',ready:'0.2.0'})},replies:{'/api/update/install':{installing:'0.2.0'}}});
  await flush();
  n=app.nodes;
- assert.equal(n.get('updateText').textContent,"The update to 0.2.0 didn't install.");
- assert.equal(n.get('updateInstall').textContent,'Retry');
+ assert.equal(n.get('updateText').textContent,'التحديث لـ 0.2.0 ما اتثبتش.');
+ assert.equal(n.get('updateInstall').textContent,'جرّب تاني');
  assert.equal(n.get('updateNotesItem').hidden,true);
  assert.equal(n.get('updateManualItem').hidden,false);
  assert.equal(n.get('updateManual').href,url);
@@ -123,8 +123,8 @@ function boot({status={},replies={}}={}){
  assert.deepEqual(app.posted('/api/update/preferences').at(-1).body,{mode:'off',installOnQuit:true});
  n.get('installOnQuit').checked=false;await n.get('installOnQuit').listeners.change();await flush();
  assert.deepEqual(app.posted('/api/update/preferences').at(-1).body,{mode:'off',installOnQuit:false});
- assert.ok(html.includes('<option value="auto">Automatic</option><option value="notify">Notify only</option><option value="off">Off</option>'));
- assert.ok(html.includes('Install updates automatically when I quit'));
+ assert.ok(html.includes('<option value="auto">تلقائي</option><option value="notify">تنبيه بس</option><option value="off">إيقاف</option>'));
+ assert.ok(html.includes('ثبّت التحديثات لما أقفل البرنامج'));
 
  console.log('ship UI tests passed');
  process.exit(0);

@@ -253,13 +253,13 @@ class Downloads(unittest.TestCase):
             raise urllib.error.URLError('getaddrinfo failed')
         code, lines = self.setup_lines(['4242', 'large-v3', '0'], model=offline)
         self.assertEqual(code, 1)
-        self.assertEqual(lines[-1], {'error': 'The download stopped. Check your internet connection and try again; it resumes where it left off.'})
+        self.assertEqual(lines[-1], {'error': 'التحميل وقف. راجع النت وجرّب تاني، وهيكمل من مكانه.'})
 
     def test_setup_main_reports_disk_full(self):
         def full(name, report):
             raise OSError(errno.ENOSPC, 'No space left on device')
         code, lines = self.setup_lines(['4242', 'large-v3', '0'], model=full)
-        self.assertEqual(lines[-1], {'error': 'The disk is full. Free up space and try again; the download resumes where it left off.'})
+        self.assertEqual(lines[-1], {'error': 'الهارد مليان. فضّي مساحة وجرّب تاني، وهيكمل من مكانه.'})
 
     def test_setup_child_watches_parent(self):
         self.setup_lines(['4242', 'large-v3', '0'])

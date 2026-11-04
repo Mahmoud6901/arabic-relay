@@ -135,10 +135,26 @@ class StreamRoutes(unittest.TestCase):
         with patch.object(speech.local_translator, 'running', return_value=False):
             connection = http.client.HTTPConnection('127.0.0.1', self.httpd.server_address[1], timeout=10)
             connection.request('GET', '/api/local-translator', headers={'Origin': server.ORIGIN})
-            self.assertEqual(json.loads(connection.getresponse().read()), {'enabled': True, 'installed': False, 'model': 'gemma4:e4b'})
+            self.assertEqual(json.loads(connection.getresponse().read()), {'enabled': True, 'installed': False, 'model': 'gemma4:e4b', 'running': False})
             connection.close()
             self.assertEqual(self.post('/api/local-translator', {'enabled': False})[1]['enabled'], False)
             self.assertEqual(self.post('/api/local-translator', {'enabled': 'no'})[0], 400)
+
+    def test_the_translator_download_routes(self):
+        job = speech.local_translator.JOB
+        with patch.object(job, 'start', return_value={'state': 'downloading'}) as start, \
+                patch.object(job, 'cancel', return_value={'state': 'cancelled'}) as cancel:
+            self.assertEqual(self.post('/api/local-translator/pull', {})[1], {'state': 'downloading'})
+            self.assertEqual(self.post('/api/local-translator/cancel', {})[1], {'state': 'cancelled'})
+            start.assert_called_once_with()
+            cancel.assert_called_once_with()
+        with patch.object(job, 'start', side_effect=ValueError(speech.local_translator.NOT_RUNNING)):
+            status, reply = self.post('/api/local-translator/pull', {})
+            self.assertEqual((status, reply['error']), (400, speech.local_translator.NOT_RUNNING))
+        connection = http.client.HTTPConnection('127.0.0.1', self.httpd.server_address[1], timeout=10)
+        connection.request('GET', '/api/local-translator/progress', headers={'Origin': server.ORIGIN})
+        self.assertIn('state', json.loads(connection.getresponse().read()))
+        connection.close()
 
     def test_a_failed_whole_reading_is_reported_and_releases_the_recording(self):
         self.short_recording()

@@ -1,8 +1,10 @@
 """Foreground delivery tests. Fake Windows calls only; never types into a real app."""
 from pathlib import Path
 from types import SimpleNamespace
+import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,6 +18,7 @@ class FakeWindows:
         self.rows = [(13, b'original')]
         self.injected = []
         self.wait_modifiers = Mock()
+        self.settle_clipboard = Mock()
         self.restore_target = Mock()
         self.open_clipboard = Mock()
 
@@ -59,6 +62,28 @@ class ClipboardDelivery(unittest.TestCase):
         args = self.timer.call_args.kwargs['args']
         self.paster.restore_and_release(*args)
         self.assertEqual(self.win.rows, [(13, b'original')])
+
+    def test_paste_keys_wait_for_the_clipboard_to_be_free(self):
+        order = []
+        self.win.settle_clipboard.side_effect = lambda: order.append('settled')
+        self.win.gesture = lambda target, attempted: (order.append('keys'), attempted())
+        self.paster.paste(self.target, 'Example', Mock())
+        self.assertEqual(order, ['settled', 'keys'])
+
+    def test_a_copy_made_during_the_wait_is_not_overwritten(self):
+        self.win.settle_clipboard.side_effect = lambda: self.win.write([(13, b'user copied something else')])
+        with self.assertRaises(ValueError):
+            self.paster.paste(self.target, 'Example', Mock())
+        self.assertEqual(self.win.injected, [])
+
+    def test_copy_leaves_the_text_on_the_clipboard(self):
+        self.paster.copy('راجع MapView.')
+        self.assertEqual(self.win.rows[0][1], 'راجع MapView.'.encode('utf-16-le') + b'\0\0')
+        self.win.user.CloseClipboard.assert_called_once()
+        self.timer.assert_not_called()      # nothing comes back later to restore the old clipboard
+        for text in ('   ', '', None, 'a' * 16001, 'a\0b'):
+            with self.assertRaises(ValueError):
+                self.paster.copy(text)
 
     def test_new_clipboard_content_is_never_overwritten_by_restore(self):
         self.paster.paste(self.target, 'Example', Mock())
@@ -149,6 +174,49 @@ class ClipboardDelivery(unittest.TestCase):
             win.check_target(self.target)
 
 
+class ClipboardSettle(unittest.TestCase):
+    def windows(self, free):
+        win = paste.Windows.__new__(paste.Windows)
+        win.user = SimpleNamespace(OpenClipboard=Mock(side_effect=free), CloseClipboard=Mock())
+        return win
+
+    def setUp(self):
+        for name, value in (('CLIPBOARD_QUIET', .03), ('CLIPBOARD_BUSY_LIMIT', .15)):
+            patcher = patch.object(paste, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_returns_once_nobody_has_held_it_for_a_moment(self):
+        win = self.windows(lambda _: True)
+        started = time.monotonic()
+        win.settle_clipboard()
+        self.assertGreaterEqual(time.monotonic() - started, .03)
+        self.assertLess(time.monotonic() - started, .15)
+        self.assertEqual(win.user.CloseClipboard.call_count, win.user.OpenClipboard.call_count)
+
+    def test_another_program_holding_it_restarts_the_wait(self):
+        started = time.monotonic()
+        busy = [started]
+
+        def free(_):
+            if time.monotonic() - started > .06:
+                return True
+            busy[0] = time.monotonic()
+            return False
+        win = self.windows(free)
+        win.settle_clipboard()
+        self.assertGreaterEqual(time.monotonic() - busy[0], .03)
+        self.assertGreater(busy[0] - started, .04, 'the holder was seen')
+
+    def test_a_clipboard_that_stays_busy_does_not_block_the_paste(self):
+        win = self.windows(lambda _: False)
+        started = time.monotonic()
+        win.settle_clipboard()
+        self.assertGreaterEqual(time.monotonic() - started, .15)
+        self.assertLess(time.monotonic() - started, 1)
+        win.user.CloseClipboard.assert_not_called()     # never closes what it did not open
+
+
 class NativeBridge(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -179,7 +247,41 @@ class NativeBridge(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.api.paste_to_target(body, self.token)
         self.capture.paster.paste.assert_called_once()
-        self.assertEqual(desktop.history.entries()['entries'][0]['english'], 'Exact prompt')
+        entry = desktop.history.entries()['entries'][0]
+        self.assertEqual((entry['english'], entry['destinations']), ('Exact prompt', ['Notepad']))
+
+    def test_text_that_cannot_land_goes_to_history_and_the_clipboard(self):
+        self.assertEqual(self.api.keep_text({'text': 'راجع الفاتورة.'}, self.token), {'saved': True, 'copied': True})
+        self.capture.paster.copy.assert_called_once_with('راجع الفاتورة.')
+        entry = desktop.history.entries()['entries'][0]
+        self.assertEqual((entry['english'], entry['destinations']), ('راجع الفاتورة.', [desktop.HISTORY_KEPT]))
+
+    def test_keeping_text_reports_what_failed(self):
+        self.capture.paster.copy.side_effect = ValueError('busy')
+        self.assertEqual(self.api.keep_text({'text': 'Keep me'}, self.token), {'saved': True, 'copied': False})
+        self.capture.paster.copy.side_effect = None
+        with patch.object(desktop, 'save_history', side_effect=sqlite3.Error('locked')):
+            self.assertEqual(self.api.keep_text({'text': 'Keep me'}, self.token), {'saved': False, 'copied': True})
+
+    def test_keeping_text_needs_the_pill_a_token_and_real_text(self):
+        with self.assertRaises(ValueError):
+            self.api.keep_text({'text': 'Keep me'}, 'bad token')
+        with self.assertRaises(ValueError):
+            desktop.DesktopApi(self.capture).keep_text({'text': 'Keep me'}, self.token)
+        for body in ({'text': '  '}, {'text': None}, {'text': 'a' * 16001}, {'text': 'a\0b'}, 'text'):
+            with self.assertRaises(ValueError):
+                self.api.keep_text(body, self.token)
+        self.capture.paster.copy.assert_not_called()
+
+    def test_show_main_opens_only_a_real_tab(self):
+        with patch.object(desktop, 'webview') as view, patch.object(desktop, 'focus_window') as focus:
+            self.api.show_main('models', self.token)
+            view.windows[0].evaluate_js.assert_called_once_with("window.relayShowTab?.('models')")
+            focus.assert_called_once()
+            for tab, token in (('models', 'bad token'), ("x');alert('", self.token), ('editor', self.token)):
+                with self.assertRaises(ValueError):
+                    self.api.show_main(tab, token)
+            view.windows[0].evaluate_js.assert_called_once()
 
     def test_inline_proof_checked_before_any_paste(self):
         req = {'text': 'Check MapView.', 'revision': 3, 'requestId': 'paste-inline-proof-123456'}

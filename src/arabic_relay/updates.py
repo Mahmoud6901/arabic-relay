@@ -19,7 +19,7 @@ PUBLIC_KEY = 'db597f49194c827e9ef9ec3df3e38d43000e088b576e72b7be8f3b1e43498436' 
 API = f'https://api.github.com/repos/{REPO}/releases/latest'
 MODES = ('auto', 'notify', 'off')
 DAY = 24 * 3600
-BUSY = 'Finish recording, transcribing, translating or sending first, then update.'
+BUSY = 'خلّص التسجيل أو التجهيز الأول، وبعدها حدّث.'
 FLAGS = ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS']
 STATE = {'available': None, 'releaseUrl': None, 'failed': None}
 RELEASES = f'https://github.com/{REPO}/releases'
@@ -67,7 +67,7 @@ def install_on_quit_enabled():
 
 def set_preferences(new_mode, install_on_quit):
     if new_mode not in MODES or type(install_on_quit) is not bool:
-        raise ValueError('Choose Automatic, Notify only or Off.')
+        raise ValueError('اختار تلقائي أو تنبيه بس أو إيقاف.')
     store.set_setting('update_mode', new_mode)
     store.set_setting('update_install_on_quit', int(install_on_quit))
     return state()
@@ -163,7 +163,7 @@ def busy():
 def install(relaunch):
     info = ready()
     if not info:
-        raise ValueError('No update is ready.')
+        raise ValueError('مفيش تحديث جاهز.')
     if busy():
         raise ValueError(BUSY)
     exe = folder() / info['file']
@@ -171,7 +171,7 @@ def install(relaunch):
     if not (signature.is_file() and verify(exe, signature.read_bytes())):
         for leftover in (exe, signature, folder() / 'ready.json'):
             leftover.unlink(missing_ok=True)
-        raise ValueError('The update failed its signature check and was deleted. Arabic Relay downloads it again later.')
+        raise ValueError('التحديث فشل في فحص التوقيع واتمسح. هيتحمّل تاني بعدين.')
     (folder() / 'attempt.json').write_text(json.dumps({'version': info['version']}), encoding='utf-8')
     env = {**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}  # the reopened app is its own program, not our child
     with locate.external_runtime():

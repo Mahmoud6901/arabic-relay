@@ -220,7 +220,7 @@ class EngineRequests(unittest.TestCase):
         with patch.object(engine_host, 'HOST', host), self.assertRaisesRegex(ValueError, 'under five minutes'):
             speech.engine_request(('model', 'cpu'), {'format': 'encoded'}, b'audio')
         host.request.side_effect = engine_host.EngineError('CANCELLED')
-        with patch.object(engine_host, 'HOST', host), self.assertRaisesRegex(ValueError, 'cancelled'):
+        with patch.object(engine_host, 'HOST', host), self.assertRaisesRegex(ValueError, 'اتلغى التحويل'):
             speech.engine_request(('model', 'cpu'), {'format': 'encoded'}, b'audio')
 
 

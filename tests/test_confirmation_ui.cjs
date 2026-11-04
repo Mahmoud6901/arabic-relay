@@ -1,37 +1,43 @@
-// Test the synchronous native-close handshake with the asynchronous themed dialog.
+// The themed confirmation that replaced native confirm(), and the pill's close, which never asks anything.
 const assert=require('node:assert/strict');
+const vm=require('node:vm');
 const {boot,flush}=require('./test_translation_ui.cjs');
 (async()=>{
- const app=boot({quick:true,provider:'wispr'});await flush();
- const n=app.nodes;let closes=0,allowed=false;
+ const app=boot({provider:'whisper'});await flush();
+ const n=app.nodes;
  app.context.confirm=()=>{throw Error('Native confirmation must not open');};
- app.context.window.pywebview.api.close_quick=async()=>{closes++;allowed=app.context.window.relayQuickClose();};
- n.get('english').value='Keep this exact draft';
- app.context.document.activeElement=n.get('english');
- assert.equal(app.context.window.relayQuickClose(),false);
- assert.equal(n.get('draftConfirm').open,true);
- assert.equal(n.get('draftConfirmCancel').focused,true);
- assert.equal(app.context.document.documentElement.dataset.captureStage,'review');
- assert.equal(app.context.window.relayQuickClose(),false); // repeated window-close request
- n.get('draftConfirmCancel').click();await flush();
- assert.equal(closes,0);assert.equal(n.get('english').value,'Keep this exact draft');
- assert.equal(n.get('english').focused,true);
- app.context.window.relayQuickClose();
- n.get('draftConfirm').listeners.cancel({preventDefault(){}});await flush();
- assert.equal(closes,0);assert.equal(n.get('draftConfirm').open,false);
- app.context.window.relayQuickClose();n.get('draftConfirmAccept').click();await flush();
- assert.equal(closes,1);assert.equal(allowed,true);
- assert.equal(app.posted('/api/send').length,0);
- // Approval cannot bypass a later draft's confirmation.
- assert.equal(app.context.window.relayQuickClose(),false);
- assert.equal(n.get('draftConfirm').open,true);n.get('draftConfirmCancel').click();await flush();
- n.get('english').value='';assert.equal(app.context.window.relayQuickClose(),true);
- // Replacing a draft uses the same themed choice and preserves it on cancellation.
- app.context.localStorage.setItem('relay-dictation-provider','whisper');
- n.get('english').value='Existing draft';
- const replacement=app.context.window.relayQuickToggle();
- assert.equal(n.get('draftConfirmTitle').textContent,'Start a new recording?');
- n.get('draftConfirmCancel').click();await replacement;
- assert.equal(n.get('english').value,'Existing draft');
- console.log('Themed confirmation: cancel, Escape, discard, repeated close, focus and replacement passed.');
+ const ask=()=>vm.runInContext("askConfirm('تمسح النص ده؟','هيتمسح من السجل.','مسح')",app.context);
+ // It says what it will do, and the safe answer has the focus.
+ const opener=n.get('clearHistory');app.context.document.activeElement=opener;
+ let answer=ask();
+ assert.equal(n.get('confirmDialog').open,true);
+ assert.equal(n.get('confirmTitle').textContent,'تمسح النص ده؟');
+ assert.equal(n.get('confirmDescription').textContent,'هيتمسح من السجل.');
+ assert.equal(n.get('confirmAccept').textContent,'مسح');
+ assert.equal(n.get('confirmCancel').focused,true);
+ // A second request while one is open is refused, and the open one still waits for its answer.
+ assert.equal(await ask(),false);
+ assert.equal(n.get('confirmDialog').open,true);
+ n.get('confirmCancel').click();
+ assert.equal(await answer,false);
+ assert.equal(n.get('confirmDialog').open,false);
+ assert.equal(opener.focused,true,'cancelling returns the focus');
+ // Escape and any other close count as no.
+ answer=ask();n.get('confirmDialog').listeners.cancel({preventDefault(){}});
+ assert.equal(await answer,false);assert.equal(n.get('confirmDialog').open,false);
+ answer=ask();n.get('confirmDialog').close();
+ assert.equal(await answer,false);
+ answer=ask();n.get('confirmAccept').click();
+ assert.equal(await answer,true);assert.equal(n.get('confirmDialog').open,false);
+ // The pill has nothing to review: closing it asks nothing and sends nothing, unless a request is still running.
+ const pill=boot({quick:true,provider:'wispr'});await flush();
+ pill.context.confirm=app.context.confirm;
+ pill.nodes.get('english').value='Some prepared text';
+ vm.runInContext('busy=true',pill.context);
+ assert.equal(pill.context.window.relayQuickClose(),false);
+ vm.runInContext('busy=false',pill.context);
+ assert.equal(pill.context.window.relayQuickClose(),true);
+ assert.notEqual(pill.nodes.get('confirmDialog').open,true);
+ assert.equal(pill.posted('/api/send').length,0);
+ console.log('Themed confirmation: cancel, Escape, close, accept, focus and the pill closing without a question passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

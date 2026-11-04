@@ -134,15 +134,29 @@ const ready=(body,text)=>({status:'ready',requestId:body.requestId,revision:body
  };
  app=await setting({enabled:true,installed:true,model:'gemma4:e4b'});
  assert.equal(app.nodes.get('localTranslator').checked,true);assert.equal(app.nodes.get('localTranslator').disabled,false);
- assert.match(app.nodes.get('localTranslatorStatus').textContent,/^On: gemma4:e4b is ready\./);
- assert.match(app.nodes.get('modeHelp').textContent,/on this computer/);
- app=await setting({enabled:true,installed:false,model:'gemma4:e4b'});
- assert.match(app.nodes.get('localTranslatorStatus').textContent,/ollama pull gemma4:e4b/);
- assert.match(app.nodes.get('modeHelp').textContent,/Uses your selected model online/);
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^شغال: gemma4:e4b جاهز\./);
+ assert.match(app.nodes.get('modeHelp').textContent,/الترجمة على جهازك/);
+ assert.equal(app.nodes.get('localPull').hidden,true);assert.equal(app.nodes.get('ollamaLink').hidden,true);
+ // Ollama running without the model: Download. Ollama not running: where to get Ollama.
+ app=await setting({enabled:true,installed:false,running:false,model:'gemma4:e4b'});
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^Ollama مش شغال/);
+ assert.equal(app.nodes.get('localPull').hidden,true);assert.equal(app.nodes.get('ollamaLink').hidden,false);
+ app=await setting({enabled:true,installed:false,running:true,model:'gemma4:e4b'});
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^gemma4:e4b مش متحمّل/);
+ assert.equal(app.nodes.get('localPull').hidden,false);assert.equal(app.nodes.get('ollamaLink').hidden,true);
+ await app.nodes.get('localPull').click();await flush();
+ assert.equal(app.posted('/api/local-translator/pull').length,1);
+ // While it downloads, the row shows how far, and offers cancel instead of Download.
+ app.context.showLocalPull({state:'downloading',done:1e9,total:4e9});
+ assert.equal(app.nodes.get('localProgressWrap').hidden,false);assert.equal(app.nodes.get('localPull').hidden,true);assert.equal(app.nodes.get('localCancel').hidden,false);
+ assert.equal(app.nodes.get('localProgress').value,.25);
+ await app.nodes.get('localCancel').click();await flush();
+ assert.equal(app.posted('/api/local-translator/cancel').length,1);
+ assert.match(app.nodes.get('modeHelp').textContent,/الترجمة بالنموذج اللي اخترته أونلاين/);
  app=await setting({enabled:false,installed:true,model:'gemma4:e4b'});
  assert.equal(app.nodes.get('localTranslator').checked,false);
- assert.match(app.nodes.get('localTranslatorStatus').textContent,/^Off: /);
- assert.match(app.nodes.get('modeHelp').textContent,/Uses your selected model online/);
+ assert.match(app.nodes.get('localTranslatorStatus').textContent,/^مقفول: /);
+ assert.match(app.nodes.get('modeHelp').textContent,/الترجمة بالنموذج اللي اخترته أونلاين/);
  app.nodes.get('localTranslator').checked=true;await app.nodes.get('localTranslator').listeners.change();await flush();
  assert.deepEqual(app.posted('/api/local-translator').filter(r=>r.body).map(r=>r.body),[{enabled:true}]);
  console.log('Inline mode: persistence, revision races, cancellation, one-click exact sending, source edits and recognition warnings passed.');

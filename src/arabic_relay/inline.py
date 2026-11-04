@@ -177,14 +177,14 @@ def request(body):
     text, revision, rid = body.get('text'), body.get('revision'), body.get('requestId')
     terms = body.get('protectedTerms', [])
     if not isinstance(text, str) or len(text) > LIMIT or type(revision) is not int or revision < 0:
-        raise ValueError('Use a transcript under 12,000 characters and a valid revision.')
+        raise ValueError('النص لازم يكون أقل من 12,000 حرف.')
     if not isinstance(rid, str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,100}', rid):
-        raise ValueError('Invalid inline request.')
+        raise ValueError('طلب الترجمة مش صحيح.')
     if not isinstance(terms, list) or len(terms) > 80 or any(not isinstance(t, str) or not 0 < len(t) <= 100 for t in terms):
-        raise ValueError('Use up to 80 protected terms, each under 100 characters.')
+        raise ValueError('استخدم لحد 80 مصطلح محمي، كل واحد أقل من 100 حرف.')
     protected, spans, issues = detect(text, terms)
     if len(spans) > 64:
-        raise ValueError('Use a shorter transcript with at most 64 Arabic phrases.')
+        raise ValueError('الكلام طويل أوي. أقصى عدد 64 عبارة عربي.')
     return {'request_id': rid, 'revision': revision, 'source_digest': digest(text), 'context_text': text,
             'protected_ranges': protected, 'spans': spans, 'target_language': 'en',
             'source_dialect': 'Egyptian Arabic', 'prompt_version': PROMPT_VERSION}, issues
@@ -271,14 +271,14 @@ def job(rid):
                 del JOBS[key]
         if rid not in JOBS:
             if len(JOBS) >= 100:
-                raise ValueError('Too many inline requests. Try again later.')
+                raise ValueError('طلبات ترجمة كتير. جرّب بعد شوية.')
             JOBS[rid] = (now, threading.Event())
         return JOBS[rid][1]
 
 
 def cancel(rid):
     if not isinstance(rid, str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,100}', rid):
-        raise ValueError('Invalid inline request.')
+        raise ValueError('طلب الترجمة مش صحيح.')
     job(rid).set()
     return {'status': 'cancelled'}
 

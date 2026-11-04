@@ -62,7 +62,7 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
    assert.equal(vm.runInContext('listening',context),false);
    assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);
    assert.equal(nodes.get('english').value,'The deadline is after the meeting. Keep React.');
-   assert.equal(context.document.documentElement.dataset.captureStage,'review');
+   assert.equal(context.document.documentElement.dataset.captureStage,'message');
    assert.equal(requests.filter(r=>r.url==='/api/restore-english').length,0);
   }
   const translations=requests.filter(r=>r.url==='/api/translate').length;
@@ -96,17 +96,10 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  await nodes.get('clearDraft').click();
  nodes.get('arabic').value='Draft survives Settings';
  await nodes.get('settingsButton').click();
- assert.equal(nodes.get('settingsDialog').open,true);
- assert.equal(nodes.get('speechDialog').hidden,false);
- await nodes.get('speechClose').click();
- assert.equal(nodes.get('settingsDialog').open,false);
+ assert.equal(nodes.get('settingsPanel').hidden,false);
+ assert.equal(nodes.get('historyPanel').hidden,true);
  assert.equal(nodes.get('arabic').value,'Draft survives Settings');
- assert.equal(nodes.get('settingsButton').focused,true);
  await nodes.get('clearDraft').click();
- await nodes.get('speechSetup').click();
- assert.equal(nodes.get('speechDialog').hidden,false);
- await nodes.get('speechClose').click();
- assert.equal(nodes.get('speechDialog').hidden,true);
  assert.ok(!html.includes('<dialog id="speechDialog"'));
  assert.ok(!html.includes('id="speechKey"'));
  // External Flow dictation changes input mode; Relay never captures or uploads its audio.
@@ -114,7 +107,7 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  assert.equal(storage.get('relay-dictation-provider'),'wispr');
  assert.equal(nodes.get('record').hidden,true);
  assert.equal(nodes.get('wisprFocus').hidden,false);
- assert.ok(nodes.get('privacySummary').textContent.includes('online'));
+ assert.ok(nodes.get('privacySummary').textContent.includes('أونلاين'));
  await nodes.get('wisprOpen').click();
  assert.ok(requests.some(r=>r.url==='/api/wispr/open'));
  const externalRequests=requests.length;
@@ -138,11 +131,11 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  nodes.get('dictationProvider').value='cohere';nodes.get('dictationProvider').listeners.change();
  assert.equal(storage.get('relay-dictation-provider'),'cohere');
  assert.equal(nodes.get('record').hidden,false);
- assert.ok(nodes.get('privacySummary').textContent.includes('online'));
+ assert.ok(nodes.get('privacySummary').textContent.includes('أونلاين'));
  const beforeCohereMic=micStarts;
  await nodes.get('record').click();
  assert.equal(micStarts,beforeCohereMic);
- assert.equal(nodes.get('speechDialog').hidden,false);
+ assert.ok(nodes.get('notice').textContent.includes('مفتاح Cohere'),'a missing key says where to add it');
  nodes.get('cohereKey').value='synthetic-api-key';await nodes.get('cohereSave').click();
  assert.equal(nodes.get('cohereKey').value,'');
  assert.ok(![...storage.values()].includes('synthetic-api-key'));
@@ -155,7 +148,7 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  assert.equal(pcm.getUint32(24,true),16000);assert.equal(pcm.getUint16(22,true),1);
  assert.equal(pcm.getInt16(46,true),-32768);assert.equal(pcm.getInt16(48,true),32767);
  await nodes.get('cohereRemove').click();
- assert.ok(nodes.get('cohereKeyStatus').textContent.includes('No key'));
+ assert.ok(nodes.get('cohereKeyStatus').textContent.includes('مفيش مفتاح'));
  await nodes.get('clearDraft').click();requests.splice(requests.findIndex(r=>r===cohereRequest),1);
  nodes.get('dictationProvider').value='whisper';nodes.get('dictationProvider').listeners.change();
  vm.runInContext('speechConfigured=true;update();',context);
@@ -193,18 +186,18 @@ async function toggleCapture(){const pending=context.window.relayQuickToggle();i
  const prepared=JSON.parse(requests.find(r=>r.url==='/api/translate').options.body);
  assert.equal(prepared.arabic,before);
  assert.ok(prepared.original.includes('الديدلاين'));
- assert.equal(nodes.get('vocabularyStatus').textContent,'Personal vocabulary: 3 words · 1 correction');
+ assert.equal(nodes.get('vocabularyStatus').textContent,'الكلمات: 3 · التصحيحات: 1');
  assert.ok(nodes.get('learnedWords').textContent.includes('deadline'));
  assert.equal(nodes.get('send').disabled,true);
  await nodes.get('forgetVocabulary').click();await flush();
- assert.equal(nodes.get('vocabularyStatus').textContent,'Personal vocabulary: 0 words · 0 corrections');
+ assert.equal(nodes.get('vocabularyStatus').textContent,'الكلمات: 0 · التصحيحات: 0');
  assert.equal(nodes.get('arabic').value,before);
  // Paste needs a native capture target; the normal workspace offers Copy prompt.
  assert.ok(!nodes.has('approve'));
  assert.ok(!nodes.has('sidebar'));
  assert.equal(nodes.get('send').disabled,true);
  vm.runInContext("busy=true;update();",context);
- assert.equal(nodes.get('dictationProvider').disabled,true);
+ assert.equal(nodes.get('useWispr').disabled,true);assert.equal(nodes.get('useCohere').disabled,true);
  assert.equal(nodes.get('autoSpelling').disabled,true);
  nodes.get('dictationProvider').value='wispr';nodes.get('dictationProvider').listeners.change();
  assert.equal(nodes.get('dictationProvider').value,'whisper');

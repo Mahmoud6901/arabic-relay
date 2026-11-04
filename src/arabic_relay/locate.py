@@ -13,7 +13,7 @@ HF_REPOS = ('models--Systran--faster-whisper-large-v3', 'models--mobiuslabsgmbh-
 APP_MODELS = ('large-v3', 'large-v3-turbo')  # downloaded by the app into paths.DATA/models
 TOOLS = ('codex', 'claude', 'wispr')
 UNINSTALL = r'Software\Microsoft\Windows\CurrentVersion\Uninstall'
-FORMAT_HELP = 'Arabic Relay needs the faster-whisper version (Systran/faster-whisper-large-v3).'
+FORMAT_HELP = 'Arabic Relay محتاج نسخة faster-whisper (Systran/faster-whisper-large-v3).'
 
 
 def validate_model_folder(folder):
@@ -27,13 +27,13 @@ def validate_model_folder(folder):
                 continue
     if folder.is_dir():
         if any(folder.glob('*.pt')):
-            raise ValueError('This is an OpenAI Whisper .pt model. ' + FORMAT_HELP)
+            raise ValueError('ده نموذج OpenAI Whisper بصيغة pt. ' + FORMAT_HELP)
         if any(folder.glob('ggml*.bin')):
-            raise ValueError('This is a whisper.cpp model. ' + FORMAT_HELP)
+            raise ValueError('ده نموذج whisper.cpp. ' + FORMAT_HELP)
         if all((folder / name).is_file() for name in ('model.bin', 'config.json', 'tokenizer.json')) and (
                 (folder / 'vocabulary.json').is_file() or (folder / 'vocabulary.txt').is_file()):
             return folder
-    raise ValueError("This folder isn't a faster-whisper model. Choose the folder that contains model.bin and config.json.")
+    raise ValueError("الفولدر ده مش نموذج faster-whisper. اختار الفولدر اللي فيه model.bin و config.json.")
 
 
 def hf_cache():
@@ -121,7 +121,7 @@ AUTO_DETECT = {'codex': 'translator_path', 'claude': 'claude_path', 'wispr': 'wi
 
 def check_kind(kind):
     if kind not in TOOLS:
-        raise ValueError('Choose Codex, Claude Code or Wispr Flow.')
+        raise ValueError('اختار Codex أو Claude Code أو Wispr Flow.')
 
 
 def tool_path(kind):
@@ -137,13 +137,13 @@ def tool_path(kind):
 def set_tool_path(kind, path):
     check_kind(kind)
     if not isinstance(path, str) or len(path) > 1000:
-        raise ValueError('Choose the program file (.exe).')
+        raise ValueError('اختار ملف البرنامج بصيغة exe.')
     if not path.strip():
         store.set_setting(kind + '_path', '')
         return {'kind': kind, 'path': None}
     program = Path(path.strip())
     if program.suffix.lower() != '.exe' or not program.is_file():
-        raise ValueError('Choose the program file (.exe).')
+        raise ValueError('اختار ملف البرنامج بصيغة exe.')
     store.set_setting(kind + '_path', str(program))
     return {'kind': kind, 'path': str(program)}
 

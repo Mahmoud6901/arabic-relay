@@ -38,8 +38,8 @@ FAILURES = (('model', re.compile(r'model.{0,80}(not supported|not found|does not
                                  r'|unrecognized_model|issue with the selected model', re.I | re.S)),
             ('usage', re.compile(r'usage limit|rate limit|quota|too many requests|\b429\b', re.I)),
             ('login', re.compile(r'not logged in|log ?in|sign ?in|unauthori[sz]ed|\b401\b|authenticat', re.I)))
-NEITHER = 'Install Codex CLI or Claude Code to prepare English prompts. You can still type English yourself.'
-TIMEOUT = 'Text preparation took too long. Try a lower effort.'
+NEITHER = 'ثبّت Codex CLI أو Claude Code عشان تجهيز البرومبت يشتغل.'
+TIMEOUT = 'التجهيز خد وقت طويل. جرّب مجهود أقل.'
 
 
 def other_tool(tool):
@@ -48,11 +48,11 @@ def other_tool(tool):
 
 def checked_choice(tool, model, effort):
     if tool not in translators.NAMES:
-        raise ValueError('Choose Codex or Claude Code.')
+        raise ValueError('اختار Codex أو Claude Code.')
     if not isinstance(model, str) or (model and not MODEL_TEXT.fullmatch(model)):
-        raise ValueError('Use a model name of letters, numbers, dots, dashes or colons, up to 80 characters.')
+        raise ValueError('اسم النموذج لازم يكون حروف وأرقام ونقط وشرطات، لحد 80 حرف.')
     if effort not in translators.EFFORTS:
-        raise ValueError('Choose one of the listed effort levels.')
+        raise ValueError('اختار مستوى مجهود من القايمة.')
     return {'tool': tool, 'model': model, 'effort': effort}
 
 
@@ -153,7 +153,7 @@ def collect_codex(process, source, cancel_event=None, deadline=None):
     try:
         while True:
             if cancel_event is not None and cancel_event.is_set():
-                raise ValueError('Text preparation cancelled.')
+                raise ValueError('اتلغى التجهيز.')
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ValueError(TIMEOUT)
@@ -203,7 +203,7 @@ def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, outpu
         if cancel_event is not None and cancel_event.is_set():
             process.kill()
             process.communicate()
-            raise ValueError('Text preparation cancelled.')
+            raise ValueError('اتلغى التجهيز.')
         if choice['tool'] == 'codex':
             stdout, stderr, completed = collect_codex(process, prompt[1], cancel_event, deadline)
         elif cancel_event is None:
@@ -215,7 +215,7 @@ def run_tool(executable, choice, prompt, cancel_event=None, deadline=None, outpu
                 if cancel_event.is_set() or time.monotonic() >= deadline:
                     process.kill()
                     process.communicate()
-                    raise ValueError('Text preparation cancelled.' if cancel_event.is_set() else TIMEOUT)
+                    raise ValueError('اتلغى التجهيز.' if cancel_event.is_set() else TIMEOUT)
                 try:
                     stdout, stderr = process.communicate(pending, timeout=max(.001, min(.25, deadline - time.monotonic())))
                     break
@@ -267,9 +267,9 @@ def failure_message(tool, kind):
     if kind == 'usage':
         return f'Your {name} usage limit was reached. Switch to {other} in Settings or try later.'
     if kind == 'login':
-        return ("Codex isn't signed in. Open a terminal and run codex login." if tool == 'codex' else
-                "Claude Code isn't signed in. Open a terminal and run claude, then type /login.")
-    return f'{name} could not return a draft. Check its sign-in and plan limits, or type English yourself.'
+        return ("Codex مش مسجّل الدخول. افتح الطرفية واكتب codex login." if tool == 'codex' else
+                "Claude Code مش مسجّل الدخول. افتح الطرفية واكتب claude وبعدها /login.")
+    return f'{name} ما رجّعش نص. راجع تسجيل الدخول وحدود خطتك.'
 
 
 def note_claude_sign_in(signed_in):
@@ -285,10 +285,10 @@ def codex_text(source, instructions, notices=None, **runtime):
     executable = locate.tool_path(tool)
     if not executable:
         if locate.tool_path(other_tool(tool)):
-            raise ValueError(f"{translators.NAMES[tool]} isn't installed. Choose {translators.NAMES[other_tool(tool)]} in Settings, or type English yourself.")
+            raise ValueError(f"{translators.NAMES[tool]} مش متثبّت. اختار {translators.NAMES[other_tool(tool)]} من تبويب النماذج.")
         raise ValueError(NEITHER)
     if not TRANSLATE_LOCK.acquire(blocking=False):
-        raise ValueError(f'{translators.NAMES[tool]} is already preparing a draft. Wait for it to finish.')
+        raise ValueError(f'{translators.NAMES[tool]} بيجهز نص دلوقتي. استنى لما يخلص.')
     try:
         prompt = (instructions, instructions + '\n\nSource text (JSON):\n' + json.dumps(source, ensure_ascii=False))
         english, failure = run_tool(executable, choice, prompt, **runtime)
@@ -329,9 +329,9 @@ SPELLING_PROMPT = (
 
 def restore_english(text, vocabulary=''):
     if not isinstance(text, str) or not text.strip() or len(text) > 12000:
-        raise ValueError('Enter a transcript between 1 and 12,000 characters.')
+        raise ValueError('النص لازم يكون من حرف لـ 12,000 حرف.')
     if not isinstance(vocabulary, str) or len(vocabulary) > 3000:
-        raise ValueError('Keep vocabulary hints under 3,000 characters.')
+        raise ValueError('الكلمات المساعدة لازم تكون أقل من 3,000 حرف.')
     raw = text.strip()
     memory = store.personal_vocabulary()
     notices = []
@@ -352,9 +352,9 @@ def restore_english(text, vocabulary=''):
 
 def translate(arabic, original=''):
     if not isinstance(arabic, str) or not arabic.strip() or len(arabic) > 12000:
-        raise ValueError('Enter your notes between 1 and 12,000 characters.')
+        raise ValueError('كلامك لازم يكون من حرف لـ 12,000 حرف.')
     if not isinstance(original, str) or len(original) > 12000:
-        raise ValueError('The original transcript must be under 12,000 characters.')
+        raise ValueError('النص الأصلي لازم يكون أقل من 12,000 حرف.')
     notices = []
     # Approved vocabulary rules apply to the finalized source before preparation; the original is preserved.
     applied = aliases.apply(arabic)

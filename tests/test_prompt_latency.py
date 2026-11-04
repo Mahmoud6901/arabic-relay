@@ -44,13 +44,13 @@ class PromptLatency(unittest.TestCase):
 
     def test_cancel_and_deadline_still_kill_child(self):
         script = 'import sys,time; sys.stdin.read(); time.sleep(10)'
-        with self.assertRaisesRegex(ValueError, 'too long'):
+        with self.assertRaisesRegex(ValueError, 'وقت طويل'):
             self.run_child(script, deadline=time.monotonic() + .3)
         event = threading.Event()
         timer = threading.Timer(.3, event.set)
         timer.start()
         try:
-            with self.assertRaisesRegex(ValueError, 'cancelled'):
+            with self.assertRaisesRegex(ValueError, 'اتلغى التجهيز'):
                 self.run_child(script, cancel_event=event)
         finally:
             timer.cancel()

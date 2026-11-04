@@ -174,7 +174,7 @@ class SpeechBoundary(unittest.TestCase):
     def test_second_crash_reports_engine_stopped(self):
         with patch.object(speech, 'speech_model_path', return_value=Path('local-model')), \
                 patch.object(speech.subprocess, 'Popen', side_effect=[self.crashed(), self.crashed()]) as launch:
-            with self.assertRaisesRegex(ValueError, r'^The speech engine stopped\. Record again to restart it\.$'):
+            with self.assertRaisesRegex(ValueError, r'^محرك الكلام وقف\. سجّل تاني عشان يشتغل\.$'):
                 speech.transcribe(b'\x1aE\xdf\xa3fake', 'audio/webm')
         self.assertEqual(launch.call_count, 2)
         self.assertFalse(speech.TRANSCRIBE_LOCK.locked())

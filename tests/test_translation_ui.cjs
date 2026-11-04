@@ -1,4 +1,4 @@
-// Runs the real interface script against scripted replies: Settings → English prompt (tool, model, effort, Browse…).
+// Runs the real interface script against scripted replies: Models → English prompt (tool, model, effort, Browse…).
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
@@ -30,6 +30,8 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
    else if(url==='/api/catalog')data=catalogHandler?await catalogHandler():{projects:[],live:false};
    else if(url==='/api/vocabulary')data={words:[],corrections:[]};
    else if(url==='/api/translators')data={...translators,choice,label:label(choice)};
+   else if(url==='/api/setup')data={models:{},recommended:'large-v3'};
+   else if(url==='/api/setup/progress')data={state:'idle'};
    else if(url==='/api/prompt-choice'){if(choiceError){ok=false;data={error:choiceError};}else{choice=body;data={promptChoice:choice,promptLabel:label(choice)};}}
    else if(url==='/api/tool-path')data={kind:body.kind,path:body.path};
    else if(url==='/api/translate')data=translate;
@@ -42,77 +44,82 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
  for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
  return {nodes,requests,context,posted:url=>requests.filter(r=>r.url===url),choice:()=>choice};
 }
-async function openSettings(app){await app.nodes.get('settingsButton').click();await flush();}
+async function openSettings(app){await app.nodes.get('modelsButton').click();await flush();}
+const choose=(app,dataset)=>app.nodes.get('modelSettings').listeners.click({target:{closest:()=>({disabled:false,dataset})}});
+const pressed=(rows,model)=>rows.includes(`data-prompt-model="${model}" aria-pressed="true"`);
 
 module.exports={boot,flush};
 if(require.main===module)(async()=>{
- // The label next to Prepare comes from status, before Settings ever opens.
+ // The label comes from status, before the Models tab ever opens.
  let app=boot();
  await flush();
  let n=app.nodes;
  assert.equal(n.get('promptChoiceLabel').textContent,'Codex · gpt-6.1-sol · low');
  assert.equal(app.posted('/api/translators').length,0);
 
- // Opening Settings loads the live list: tools, models (Default … Custom…), efforts.
+ // Opening Models loads the live list: tools, models (Default … another…), efforts.
  await openSettings(app);
  assert.equal(app.posted('/api/translators').length,1);
- assert.equal(n.get('promptTool').value,'codex');
- const models=n.get('promptModel').innerHTML;
- assert.ok(models.indexOf('>Default<')<models.indexOf('>GPT-6.1-Sol<'));
- assert.ok(models.indexOf('>GPT-6-Luna<')<models.indexOf('>Custom…<'));
- assert.equal(n.get('promptModel').value,'gpt-6.1-sol');
+ let rows=n.get('codexModels').innerHTML;
+ assert.ok(rows.indexOf('الافتراضي')<rows.indexOf('>GPT-6.1-Sol<'));
+ assert.ok(rows.indexOf('>GPT-6-Luna<')<rows.indexOf('نموذج تاني…'));
+ assert.ok(pressed(rows,'gpt-6.1-sol'),'the saved model is the lit row');
+ assert.ok(rows.includes('المستخدم حاليًا'));
  assert.equal([...n.get('promptEffort').innerHTML.matchAll(/value="([^"]+)"/g)].map(m=>m[1]).join(','),'low,medium,high,xhigh,max');
  assert.ok(!n.get('promptEffort').innerHTML.includes('ultra'));
- assert.equal(n.get('codexStatus').textContent,'Codex · signed in');
+ assert.ok(n.get('promptEffort').innerHTML.includes('>منخفض<'));
+ assert.equal(n.get('codexStatus').textContent,'مسجّل الدخول');
  assert.equal(n.get('toolHelp').hidden,true);
 
  // Changing the model saves the choice and updates the label; an unsupported effort moves to the model's first.
  n.get('promptEffort').value='high';await n.get('promptEffort').listeners.change();await flush();
  assert.deepEqual(app.posted('/api/prompt-choice').at(-1).body,{tool:'codex',model:'gpt-6.1-sol',effort:'high'});
  assert.equal(n.get('promptChoiceLabel').textContent,'Codex · gpt-6.1-sol · high');
- n.get('promptModel').value='gpt-6-luna';await n.get('promptModel').listeners.change();await flush();
+ await choose(app,{promptTool:'codex',promptModel:'gpt-6-luna'});await flush();
  assert.deepEqual(app.posted('/api/prompt-choice').at(-1).body,{tool:'codex',model:'gpt-6-luna',effort:'low'});
  assert.equal([...n.get('promptEffort').innerHTML.matchAll(/value="([^"]+)"/g)].map(m=>m[1]).join(','),'low,medium');
+ assert.ok(pressed(n.get('codexModels').innerHTML,'gpt-6-luna'));
 
- // Switching the tool starts at Default and lists Claude's models.
- n.get('promptTool').value='claude';await n.get('promptTool').listeners.change();await flush();
+ // Choosing a row of the other tool moves to it; Default is the first of its rows.
+ await choose(app,{promptTool:'claude',promptModel:''});await flush();
  assert.deepEqual(app.posted('/api/prompt-choice').at(-1).body,{tool:'claude',model:'',effort:'low'});
- assert.ok(['>Default<','>Fable<','>Opus<','>Sonnet<','>Haiku<','>Custom…<'].every(t=>n.get('promptModel').innerHTML.includes(t)));
+ assert.ok(['الافتراضي','>Fable<','>Opus<','>Sonnet<','>Haiku<','نموذج تاني…'].every(t=>n.get('claudeModels').innerHTML.includes(t)));
+ assert.ok(!n.get('codexModels').innerHTML.includes('المستخدم حاليًا'),'one model in use across both tools');
  assert.equal(n.get('promptChoiceLabel').textContent,'Claude Code · Default · low');
 
- // Custom…: a text box; Enter saves it.
- n.get('promptModel').value='custom';await n.get('promptModel').listeners.change();await flush();
+ // Another model: a text box; Enter saves it.
+ await choose(app,{promptTool:'claude',promptCustom:'1'});await flush();
  assert.equal(n.get('promptCustom').hidden,false);
  n.get('promptCustom').value=' claude-opus-5-5 ';await n.get('promptCustom').listeners.keydown({key:'Enter',preventDefault(){}});await flush();
  assert.deepEqual(app.posted('/api/prompt-choice').at(-1).body,{tool:'claude',model:'claude-opus-5-5',effort:'low'});
  assert.equal(n.get('promptCustom').hidden,true);
- assert.ok(n.get('promptModel').innerHTML.includes('>claude-opus-5-5<'));
+ assert.ok(n.get('claudeModels').innerHTML.includes('>claude-opus-5-5<'));
 
  // A refused choice keeps the previous one and says why.
- app=boot({choiceError:'Use a model name of letters, numbers, dots, dashes or colons, up to 80 characters.'});
+ app=boot({choiceError:'اسم النموذج لازم يكون حروف وأرقام ونقط وشرطات، لحد 80 حرف.'});
  await flush();n=app.nodes;await openSettings(app);
- n.get('promptModel').value='custom';await n.get('promptModel').listeners.change();
+ await choose(app,{promptTool:'codex',promptCustom:'1'});
  n.get('promptCustom').value='bad name';await n.get('promptCustom').listeners.keydown({key:'Enter',preventDefault(){}});await flush();
- assert.equal(n.get('promptModel').value,'gpt-6.1-sol');
- assert.equal(n.get('notice').textContent,'Use a model name of letters, numbers, dots, dashes or colons, up to 80 characters.');
+ assert.ok(pressed(n.get('codexModels').innerHTML,'gpt-6.1-sol'));
+ assert.equal(n.get('notice').textContent,'اسم النموذج لازم يكون حروف وأرقام ونقط وشرطات، لحد 80 حرف.');
 
  // Missing and signed-out tools.
  app=boot({translators:catalog({codex:{signedIn:false},claude:{installed:false,path:null}})});
  await flush();n=app.nodes;await openSettings(app);
- assert.equal(n.get('codexStatus').textContent,"Codex isn't signed in. Open a terminal and run codex login.");
- assert.equal(n.get('claudeStatus').textContent,'Claude Code · not found');
- assert.ok(n.get('promptTool').innerHTML.includes('value="claude" disabled'));
+ assert.equal(n.get('codexStatus').textContent,'مش مسجّل الدخول. افتح الطرفية واكتب codex login.');
+ assert.equal(n.get('claudeStatus').textContent,'مش موجود على الجهاز');
+ assert.ok(n.get('claudeModels').innerHTML.includes(' disabled>'),"a missing tool's rows cannot be chosen");
  app=boot({translators:catalog({codex:{installed:false,path:null,models:[],signedIn:null},claude:{installed:false,path:null}})});
  await flush();n=app.nodes;await openSettings(app);
  assert.equal(n.get('toolHelp').hidden,false);
  const help=html.match(/id="toolHelp"[^>]*>([\s\S]*?)<\/p>/)[1];
- assert.ok(help.startsWith('Install Codex CLI or Claude Code to prepare English prompts. You can still type English yourself.'));
+ assert.ok(help.startsWith('ثبّت واحد منهم عشان تجهيز البرومبت يشتغل:'));
  assert.ok(help.includes('href="https://developers.openai.com/codex/cli"')&&help.includes('href="https://code.claude.com/docs/en/overview"'));
 
- // A model list that failed still offers Default and Custom….
+ // A model list that failed still offers Default and another model.
  app=boot({translators:catalog({codex:{models:[]}})});
  await flush();n=app.nodes;await openSettings(app);
- assert.ok(n.get('promptModel').innerHTML.includes('>Default<')&&n.get('promptModel').innerHTML.includes('>Custom…<'));
+ assert.ok(n.get('codexModels').innerHTML.includes('الافتراضي')&&n.get('codexModels').innerHTML.includes('نموذج تاني…'));
 
  // Browse… and Locate Wispr Flow… (desktop window only).
  assert.equal(n.get('codexBrowse').hidden,true);
@@ -128,7 +135,7 @@ if(require.main===module)(async()=>{
  // A moved Browse… choice is reported.
  app=boot({status:{missingTools:{codex:'C:\\Tools\\codex.exe'}}});
  await flush();
- assert.equal(app.nodes.get('notice').textContent,'Codex was moved or deleted: C:\\Tools\\codex.exe. Arabic Relay uses the copy it finds, or choose Browse… again.');
+ assert.equal(app.nodes.get('notice').textContent,'Codex اتنقل أو اتمسح: C:\\Tools\\codex.exe. البرنامج هيستخدم أي نسخة يلاقيها، أو اختار مكانه من تبويب النماذج.');
 
  // A model fallback during Prepare is shown.
  app=boot({translate:{english:'Done.',notice:'gpt-old is no longer available, so Arabic Relay switched to the default model.'}});

@@ -40,21 +40,21 @@ def fold(text):
 
 def clean_heard(heard):
     if not isinstance(heard, str):
-        raise ValueError('Enter the heard form in Arabic letters.')
+        raise ValueError('اكتب الكلمة زي ما اتسمعت بحروف عربي.')
     heard = ' '.join(heard.split())
     folded = fold(heard)[0]
     if not 2 <= len(heard) <= 80 or not any(map(arabic_letter, heard)) \
             or any(not (arabic_letter(c) or c == ' ') for c in folded):
-        raise ValueError('The heard form must be 2–80 characters of Arabic letters, for example ريدزاين.')
+        raise ValueError('الكلمة المسموعة لازم تكون من حرفين لـ 80 حرف عربي، زي ريدزاين.')
     return heard
 
 
 def clean_canonical(canonical):
     if not isinstance(canonical, str):
-        raise ValueError('Enter the English spelling.')
+        raise ValueError('اكتب الكتابة الإنجليزي.')
     canonical = ' '.join(canonical.split())
     if not CANONICAL.fullmatch(canonical) or not re.search('[A-Za-z]', canonical):
-        raise ValueError('The English spelling must be 1–80 characters of Latin letters, numbers or . _ - + # / :')
+        raise ValueError('الكتابة الإنجليزي لازم تكون من حرف لـ 80 حرف لاتيني أو أرقام أو . _ - + # / :')
     return canonical
 
 
@@ -90,15 +90,15 @@ def valid_pair(heard, canonical):
 def add(heard, canonical, provenance='user'):
     heard, canonical = clean_heard(heard), clean_canonical(canonical)
     if provenance not in ('user', 'learned'):
-        raise ValueError('Invalid approval.')
+        raise ValueError('الموافقة مش صحيحة.')
     now = time.time()
     with store.database(vocabulary=True) as db:
         db.execute('BEGIN IMMEDIATE')
         existing = {fold(row['heard'])[0]: row for row in rows(db)}
         if fold(heard)[0] in existing:
-            raise ValueError(f"“{heard}” already has a rule. Edit that rule instead.")
+            raise ValueError(f"“{heard}” ليها قاعدة بالفعل. عدّل القاعدة دي.")
         if db.execute('SELECT COUNT(*) FROM learned.aliases').fetchone()[0] >= LIMIT:
-            raise ValueError(f'Keep up to {LIMIT} vocabulary rules.')
+            raise ValueError(f'أقصى عدد {LIMIT} قاعدة.')
         db.execute('INSERT INTO learned.aliases (heard, canonical, enabled, scope, provenance, approved, updated) '
                    "VALUES (?, ?, 1, 'global', ?, ?, ?)", (heard, canonical, provenance, now, now))
     return listing()
@@ -106,18 +106,18 @@ def add(heard, canonical, provenance='user'):
 
 def update(rule_id, heard=None, canonical=None, enabled=None):
     if type(rule_id) is not int:
-        raise ValueError('Choose a vocabulary rule.')
+        raise ValueError('اختار قاعدة.')
     with store.database(vocabulary=True) as db:
         db.execute('BEGIN IMMEDIATE')
         row = db.execute('SELECT * FROM learned.aliases WHERE id=?', (rule_id,)).fetchone()
         if row is None:
-            raise ValueError('That vocabulary rule no longer exists.')
+            raise ValueError('القاعدة دي مش موجودة.')
         heard = clean_heard(heard) if heard is not None else row['heard']
         canonical = clean_canonical(canonical) if canonical is not None else row['canonical']
         if enabled is not None and type(enabled) is not bool:
-            raise ValueError('Choose whether the rule is enabled.')
+            raise ValueError('اختار القاعدة شغالة ولا لأ.')
         if any(fold(other['heard'])[0] == fold(heard)[0] and other['id'] != rule_id for other in rows(db)):
-            raise ValueError(f"“{heard}” already has a rule. Edit that rule instead.")
+            raise ValueError(f"“{heard}” ليها قاعدة بالفعل. عدّل القاعدة دي.")
         db.execute('UPDATE learned.aliases SET heard=?, canonical=?, enabled=?, updated=? WHERE id=?',
                    (heard, canonical, int(row['enabled'] if enabled is None else enabled), time.time(), rule_id))
     return listing()
@@ -125,7 +125,7 @@ def update(rule_id, heard=None, canonical=None, enabled=None):
 
 def delete(rule_id):
     if type(rule_id) is not int:
-        raise ValueError('Choose a vocabulary rule.')
+        raise ValueError('اختار قاعدة.')
     with store.database(vocabulary=True) as db:
         db.execute('DELETE FROM learned.aliases WHERE id=?', (rule_id,))
     return listing()
@@ -164,7 +164,7 @@ def candidates(text, rules):
 def apply(text, rules=None):
     """{'text', 'original', 'replacements', 'conflicts'}; replacements carry original offsets and rule IDs."""
     if not isinstance(text, str) or len(text) > 12000:
-        raise ValueError('Use a transcript under 12,000 characters.')
+        raise ValueError('النص لازم يكون أقل من 12,000 حرف.')
     if rules is None:
         rules = [row for row in rows() if row['enabled']]
     found = candidates(text, rules)

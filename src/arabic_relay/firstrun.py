@@ -3,10 +3,34 @@ import json
 import os
 import subprocess
 import threading
+from pathlib import Path
 
 from . import diagnostics, locate, models, paths, speech, store
 
-GPU_FAILED = "The GPU couldn't run the speech model, so speech will use the CPU. You can turn this off in Settings."
+GPU_FAILED = "كارت الشاشة ما قدرش يشغّل النموذج، فالكلام هيشتغل على المعالج. تقدر تغيّر ده من الإعدادات."
+
+
+def whisper_models():
+    """Each Whisper model this app can download: its size, whether it is here, and whether it is the one in use."""
+    current = speech.speech_model_path()
+    current = Path(current).resolve() if current else None
+    rows = {}
+    for name, spec in models.MODELS.items():
+        try:
+            path = locate.validate_model_folder(models.models_dir() / name)
+        except (ValueError, OSError):
+            path = None
+        rows[name] = {'gb': round(spec['bytes'] / 1e9, 1), 'installed': path is not None,
+                      'active': path is not None and Path(path).resolve() == current, 'path': str(path) if path else None}
+    return rows
+
+
+def custom_model():
+    """The model in use when it lives outside this app's folder, such as one the user pointed at."""
+    current = speech.speech_model_path()
+    if current is None or models.app_owned(current):
+        return None
+    return {'label': models.model_label(current).replace(' (your model)', ''), 'path': str(current)}
 
 
 def checklist():
@@ -15,7 +39,7 @@ def checklist():
     return {'gpu': gpu, 'gpuRuntimeReady': ready, 'codex': bool(locate.tool_path('codex')), 'claude': bool(locate.tool_path('claude')),
             'wisprFlow': locate.tool_path('wispr') is not None, 'freeGb': round(models.free_bytes() / 1e9, 1),
             'recommended': 'large-v3' if gpu else 'large-v3-turbo',
-            'models': {name: {'gb': round(spec['bytes'] / 1e9, 1)} for name, spec in models.MODELS.items()},
+            'models': whisper_models(), 'customModel': custom_model(),
             'gpuDownloadGb': round(models.GPU_WHEEL['bytes'] / 1e9, 2) if gpu and not ready else 0}
 
 
@@ -33,7 +57,7 @@ class SetupJob:
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.state = {'state': 'idle', 'stage': None, 'done': 0, 'total': 0, 'error': None, 'device': None, 'notice': None}
+        self.state = {'state': 'idle', 'model': None, 'stage': None, 'done': 0, 'total': 0, 'error': None, 'device': None, 'notice': None}
         self.process = None
         self.thread = None
         self.cancelled = False
@@ -48,17 +72,17 @@ class SetupJob:
 
     def start(self, name, fresh=False):
         if name not in models.MODELS:
-            raise ValueError('Choose Whisper large-v3 or large-v3-turbo.')
+            raise ValueError('اختار Whisper large-v3 أو large-v3-turbo.')
         gpu_download = models.gpu_info() is not None and models.gpu_runtime_dir() is None
         target = models.models_dir() / name
         with self.lock:
             if self.state['state'] in ('downloading', 'checking'):
-                raise ValueError('A download is already running.')
+                raise ValueError('فيه تحميل شغال بالفعل.')
             # Bytes already here count as free: a resume reuses them, a fresh download deletes them first.
             here = models.folder_bytes(target) + (models.folder_bytes(models.runtime_dir()) if gpu_download else 0)
             need, free = models.bytes_needed(name, gpu_download), models.free_bytes() + here
             if free < need:
-                raise ValueError(f'Free up space first: this download needs {need / 1e9:.1f} GB and {free / 1e9:.1f} GB is free.')
+                raise ValueError(f'فضّي مساحة الأول: التحميل محتاج {need / 1e9:.1f} GB والمتاح {free / 1e9:.1f} GB.')
             if fresh and target.is_dir():
                 models.delete_model(target)
             env = os.environ.copy()
@@ -69,7 +93,7 @@ class SetupJob:
                 self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
                                                 cwd=paths.DATA, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             self.cancelled = False
-            self.state = {'state': 'downloading', 'stage': 'model', 'done': 0, 'total': models.MODELS[name]['bytes'],
+            self.state = {'state': 'downloading', 'model': name, 'stage': 'model', 'done': 0, 'total': models.MODELS[name]['bytes'],
                           'error': None, 'device': None, 'notice': None}
             self.thread = threading.Thread(target=self.follow, args=(self.process,), daemon=True)
             self.thread.start()
@@ -90,7 +114,7 @@ class SetupJob:
         if self.cancelled:
             return
         if folder is None:
-            return self.update(state='error', error=error or 'The download stopped unexpectedly. Try again.')
+            return self.update(state='error', error=error or 'التحميل وقف فجأة. جرّب تاني.')
         self.update(state='checking', stage='check')
         try:
             speech.set_whisper_model(folder)

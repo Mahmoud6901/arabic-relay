@@ -18,6 +18,9 @@ URL = 'http://127.0.0.1:11434'
 TIMEOUT = 15                  # seconds: a cold model usually loads within this; past it the online model is quicker
 LOAD_TIMEOUT = 120            # a model's first load after installing can take this long
 QUIT_TIMEOUT = 2
+PULL_STALL = 120              # Ollama reports often while downloading; verifying the finished file is its longest silence
+NOT_RUNNING = 'Ollama مش شغال. شغّله أو ثبّته من ollama.com/download وجرّب تاني.'
+PULL_FAILED = 'تحميل النموذج فشل. راجع النت وجرّب تاني.'
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # always this computer, never a proxy
 USED = threading.Event()      # this app asked for the model, so it should free the model on quitting
 SYSTEM = ('You translate marked phrases in a speech transcript that mixes English and Egyptian Arabic. Each Arabic phrase is marked like [1: ...]. '
@@ -43,7 +46,7 @@ def enabled():
 
 def set_enabled(value):
     if type(value) is not bool:
-        raise ValueError('Choose whether to translate on this computer.')
+        raise ValueError('اختار الترجمة تبقى على جهازك ولا لأ.')
     store.set_setting('local_translator', int(value))
     if not value:
         unload()
@@ -61,14 +64,15 @@ def running():
 
 
 def status():
+    up = running()
     try:
-        if not running():
+        if not up:
             raise OSError('not running')
         with OPENER.open(URL + '/api/tags', timeout=QUIT_TIMEOUT) as response:
             installed = any(row.get('name') == MODEL for row in json.load(response).get('models', []))
     except (OSError, ValueError, AttributeError, http.client.HTTPException):
         installed = False
-    return {'enabled': enabled(), 'installed': installed, 'model': MODEL}
+    return {'enabled': enabled(), 'installed': installed, 'model': MODEL, 'running': up}
 
 
 def keep_alive():
@@ -153,3 +157,66 @@ def unload():
         post({'messages': [], 'keep_alive': 0}, QUIT_TIMEOUT)
     except Unavailable:
         pass
+
+
+class PullJob:
+    """Downloads the translator through Ollama, one at a time. Ollama keeps partial files, so a cancelled pull resumes."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.state = {'state': 'idle', 'done': 0, 'total': 0, 'error': None}
+        self.cancelled = None
+
+    def progress(self):
+        with self.lock:
+            return dict(self.state)
+
+    def start(self):
+        with self.lock:
+            if self.state['state'] == 'downloading':
+                raise ValueError('فيه تحميل شغال بالفعل.')
+            if not running():
+                raise ValueError(NOT_RUNNING)
+            self.cancelled = threading.Event()
+            self.state = {'state': 'downloading', 'done': 0, 'total': 0, 'error': None}
+            threading.Thread(target=self.follow, args=(self.cancelled,), daemon=True).start()
+            return dict(self.state)
+
+    def finish(self, cancelled, **values):
+        with self.lock:
+            if not cancelled.is_set():
+                self.state.update(values)
+
+    def follow(self, cancelled):
+        request = urllib.request.Request(URL + '/api/pull', json.dumps({'model': MODEL, 'stream': True}).encode(),
+                                         {'Content-Type': 'application/json'})
+        layers = {}
+        try:
+            with OPENER.open(request, timeout=PULL_STALL) as response:
+                for raw in response:
+                    if cancelled.is_set():
+                        return
+                    row = json.loads(raw)
+                    if row.get('error'):
+                        logging.warning('Local translator download failed: %s', row['error'])
+                        return self.finish(cancelled, state='error', error=PULL_FAILED)
+                    if row.get('digest') and row.get('total'):
+                        layers[row['digest']] = (row.get('completed', 0), row['total'])
+                        self.finish(cancelled, done=sum(done for done, _ in layers.values()),
+                                    total=sum(total for _, total in layers.values()))
+                    if row.get('status') == 'success':
+                        return self.finish(cancelled, state='done')
+            self.finish(cancelled, state='error', error=PULL_FAILED)
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            logging.warning('Local translator download failed (%s)', type(error).__name__)
+            self.finish(cancelled, state='error', error=PULL_FAILED)
+
+    def cancel(self):
+        with self.lock:
+            if self.state['state'] == 'downloading':
+                self.cancelled.set()
+                self.state['state'] = 'cancelled'
+            return dict(self.state)
+
+
+JOB = PullJob()

@@ -80,8 +80,11 @@ def app_owned(folder):
 
 def delete_model(folder):
     if not app_owned(folder):
-        raise ValueError('Arabic Relay only deletes models it downloaded. Remove this folder yourself if you no longer need it.')
-    shutil.rmtree(folder)
+        raise ValueError('Arabic Relay بيمسح النماذج اللي حمّلها بس. امسح الفولدر ده بنفسك لو مش محتاجه.')
+    try:
+        shutil.rmtree(folder)
+    except OSError:
+        raise ValueError('ملفات النموذج مستخدمة دلوقتي. جرّب تاني بعد شوية.') from None
 
 
 def free_bytes():
@@ -112,14 +115,14 @@ def fetch(url, dest, sha256, size, report):
                     report('gpu', have, size)
     if have > size:  # more than promised: never fill the disk
         part.unlink()
-        raise ValueError('The download was damaged. Try again.')
+        raise ValueError('الملف اتحمّل بايظ. جرّب تاني.')
     digest = hashlib.sha256()
     with part.open('rb') as data:
         while chunk := data.read(1 << 20):
             digest.update(chunk)
     if digest.hexdigest() != sha256:
         part.unlink()
-        raise ValueError('The download was damaged. Try again.')
+        raise ValueError('الملف اتحمّل بايظ. جرّب تاني.')
     part.replace(dest)
     return dest
 
@@ -169,8 +172,8 @@ def folder_bytes(folder):
     return total
 
 
-NETWORK_ERROR = 'The download stopped. Check your internet connection and try again; it resumes where it left off.'
-DISK_FULL = 'The disk is full. Free up space and try again; the download resumes where it left off.'
+NETWORK_ERROR = 'التحميل وقف. راجع النت وجرّب تاني، وهيكمل من مكانه.'
+DISK_FULL = 'الهارد مليان. فضّي مساحة وجرّب تاني، وهيكمل من مكانه.'
 
 
 def setup_main(args):
@@ -186,7 +189,7 @@ def setup_main(args):
         watch_parent(int(args[0]))  # closing the window stops the download; partial files stay for the next try
         name = args[1]
         if name not in MODELS:
-            raise ValueError('Choose Whisper large-v3 or large-v3-turbo.')
+            raise ValueError('اختار Whisper large-v3 أو large-v3-turbo.')
         folder = download_model(name, lambda stage, done, total: say(stage=stage, done=done, total=total))
         if args[2] == '1' and gpu_runtime_dir() is None:
             wheel = fetch(GPU_WHEEL['url'], runtime_dir() / 'cublas.whl', GPU_WHEEL['sha256'], GPU_WHEEL['bytes'],
@@ -199,5 +202,5 @@ def setup_main(args):
         if isinstance(error, OSError):
             say(error=DISK_FULL if error.errno == errno.ENOSPC else NETWORK_ERROR)
         else:
-            say(error=str(error) if isinstance(error, ValueError) else 'The download failed. Try again.')
+            say(error=str(error) if isinstance(error, ValueError) else 'التحميل فشل. جرّب تاني.')
         return 1

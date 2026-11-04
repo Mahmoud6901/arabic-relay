@@ -39,7 +39,7 @@ class RecordingHotkey:
             user.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)  # create the thread's message queue
             self.registered = bool(user.RegisterHotKey(None, self.ID, self.modifiers, self.key))
             if not self.registered:
-                self.error = f'{self.label} is unavailable. Another app may be using it. Choose another shortcut in Settings, or use Quick capture.'
+                self.error = f'{self.label} مش متاح، وممكن تطبيق تاني بيستخدمه. اختار اختصار تاني من الإعدادات.'
                 return
             if self.stopping.is_set():
                 return
@@ -49,7 +49,7 @@ class RecordingHotkey:
                     # Keep the loop responsive to shutdown while the window loads.
                     threading.Thread(target=self.callback, daemon=True).start()
         except Exception:
-            self.error = 'The recording shortcut could not start. Use Quick capture instead.'
+            self.error = 'اختصار التسجيل ما اشتغلش. أعد تشغيل البرنامج أو اختار اختصار تاني.'
             logging.exception('Recording shortcut failed')
         finally:
             self.ready.set()

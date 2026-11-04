@@ -12,7 +12,7 @@ class Shortcut(unittest.TestCase):
         with patch.object(hotkey.ctypes, 'WinDLL', return_value=user):
             key._run()
         self.assertFalse(key.registered)
-        self.assertIn('Another app', key.error)
+        self.assertIn('مش متاح', key.error)
         user.UnregisterHotKey.assert_not_called()
         self.assertTrue(key.ready.is_set())
 
@@ -29,7 +29,7 @@ class Shortcut(unittest.TestCase):
     def test_popup_waits_for_page_ready_and_reuses_one_editor(self):
         capture = desktop.QuickCapture()
         window = MagicMock()
-        with patch.object(desktop, 'webview') as view, patch.object(desktop.ctypes, 'windll') as dll:
+        with patch.object(desktop, 'webview') as view, patch.object(desktop.ctypes, 'windll') as dll, patch.object(desktop, 'see_through'):
             dll.user32.GetDpiForSystem.return_value = 144
             view.screens = [MagicMock(width=1920, height=1080, x=-1920, y=0),
                             MagicMock(width=1200, height=900, x=0, y=0)]
@@ -38,14 +38,16 @@ class Shortcut(unittest.TestCase):
             capture.toggle()
             capture.toggle()  # second press during initial loading does not duplicate
             create.assert_called_once()
-            self.assertEqual(create.call_args.kwargs['height'], 88)
-            self.assertEqual(create.call_args.kwargs['min_size'], (280, 80))
-            self.assertEqual(create.call_args.kwargs['y'], 442)
+            self.assertEqual(create.call_args.kwargs['height'], 56)
+            self.assertEqual(create.call_args.kwargs['min_size'], (120, 40))
+            self.assertEqual(create.call_args.kwargs['y'], 490)
             self.assertTrue(create.call_args.kwargs['frameless'])
-            capture.set_stage('review')
-            window.resize.assert_called_once_with(620, 500)
-            window.move.assert_called_once_with(90, 30)
-            capture.set_stage('review')
+            self.assertFalse(create.call_args.kwargs['focus'])    # the user's app keeps the keyboard
+            self.assertIsNone(window.native.Activate())           # pywebview would otherwise activate it anyway
+            capture.set_stage('message')
+            window.resize.assert_called_once_with(400, 60)
+            window.move.assert_called_once_with(200, 470)
+            capture.set_stage('message')
             window.resize.assert_called_once()
             window.evaluate_js.assert_not_called()
             capture.loaded()
@@ -73,6 +75,16 @@ class Shortcut(unittest.TestCase):
             capture.stop()
             stop.assert_called_once()
 
+    def test_only_the_pill_can_ask_for_the_keyboard(self):
+        capture = MagicMock()
+        with patch.object(desktop, 'take_keyboard') as take:
+            for api, token in ((desktop.DesktopApi(capture), server.CSRF), (desktop.DesktopApi(capture, quick=True), 'wrong')):
+                with self.assertRaises(ValueError):
+                    api.quick_keyboard(token)
+            take.assert_not_called()
+            desktop.DesktopApi(capture, quick=True).quick_keyboard(server.CSRF)
+            take.assert_called_once_with(capture.window)
+
     def test_native_shortcut_methods_require_token_and_popup_role(self):
         capture = MagicMock()
         api = desktop.DesktopApi(capture)
@@ -84,13 +96,13 @@ class Shortcut(unittest.TestCase):
         desktop.DesktopApi(capture, quick=True).quick_ready(server.CSRF)
         capture.loaded.assert_called_once()
         with self.assertRaises(ValueError):
-            api.quick_stage('review', server.CSRF)
+            api.quick_stage('message', server.CSRF)
         with self.assertRaises(ValueError):
             desktop.DesktopApi(capture, quick=True).quick_stage('invalid', server.CSRF)
         with self.assertRaises(ValueError):
             api.close_quick(server.CSRF)
-        desktop.DesktopApi(capture, quick=True).quick_stage('review', server.CSRF)
-        capture.set_stage.assert_called_once_with('review')
+        desktop.DesktopApi(capture, quick=True).quick_stage('message', server.CSRF)
+        capture.set_stage.assert_called_once_with('message')
 
 
 if __name__ == '__main__':

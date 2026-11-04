@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from arabic_relay import firstrun, models, paths, speech, store
 
 GPU = {'name': 'NVIDIA GeForce RTX 4080 Laptop GPU', 'vramGb': 12.0, 'driver': '616.92'}
-GPU_FAILED = "The GPU couldn't run the speech model, so speech will use the CPU. You can turn this off in Settings."
+GPU_FAILED = "كارت الشاشة ما قدرش يشغّل النموذج، فالكلام هيشتغل على المعالج. تقدر تغيّر ده من الإعدادات."
 
 
 def make_model(folder):
@@ -61,7 +61,7 @@ class FirstRun(unittest.TestCase):
 
     def test_start_refuses_when_disk_is_short(self):
         with patch.object(models, 'free_bytes', return_value=1_000_000_000):
-            with self.assertRaisesRegex(ValueError, r'^Free up space first: this download needs 1\.8 GB and 1\.0 GB is free\.$'):
+            with self.assertRaisesRegex(ValueError, r'^فضّي مساحة الأول: التحميل محتاج 1\.8 GB والمتاح 1\.0 GB\.$'):
                 firstrun.JOB.start('large-v3-turbo')
 
     def test_resume_counts_bytes_already_downloaded(self):
@@ -80,7 +80,7 @@ class FirstRun(unittest.TestCase):
         need = models.bytes_needed('large-v3-turbo', False)
         with patch.object(models, 'free_bytes', return_value=need - 500), \
                 patch.object(firstrun.subprocess, 'Popen', side_effect=AssertionError('must not start a real download')):
-            with self.assertRaisesRegex(ValueError, '^Free up space first'):
+            with self.assertRaisesRegex(ValueError, '^فضّي مساحة الأول'):
                 firstrun.JOB.start('large-v3-turbo')
 
     def test_job_runs_child_then_check(self):
@@ -112,9 +112,9 @@ class FirstRun(unittest.TestCase):
 
     def test_check_error_is_reported(self):
         def broken():
-            raise ValueError('The speech engine stopped. Record again to restart it.')
+            raise ValueError('محرك الكلام وقف. سجّل تاني عشان يشتغل.')
         progress = self.run_job(child([self.model_line()]), check=broken)
-        self.assertEqual((progress['state'], progress['error']), ('error', 'The speech engine stopped. Record again to restart it.'))
+        self.assertEqual((progress['state'], progress['error']), ('error', 'محرك الكلام وقف. سجّل تاني عشان يشتغل.'))
 
     def test_cancel_keeps_partial_files(self):
         partial = paths.DATA / 'models' / 'large-v3'
@@ -147,7 +147,7 @@ class FirstRun(unittest.TestCase):
         hold = threading.Event()
         with patch.object(firstrun.subprocess, 'Popen', return_value=child([], hold=hold)):
             firstrun.JOB.start('large-v3')
-            with self.assertRaisesRegex(ValueError, r'^A download is already running\.$'):
+            with self.assertRaisesRegex(ValueError, r'^فيه تحميل شغال بالفعل\.$'):
                 firstrun.JOB.start('large-v3')
             firstrun.JOB.cancel()
             firstrun.JOB.thread.join(5)
@@ -171,10 +171,47 @@ class FirstRun(unittest.TestCase):
             no_gpu = firstrun.checklist()
             with patch.object(models, 'gpu_info', return_value=GPU):
                 gpu = firstrun.checklist()
+        absent = {'installed': False, 'active': False, 'path': None}
         self.assertEqual(no_gpu, {'gpu': None, 'gpuRuntimeReady': False, 'codex': True, 'claude': False, 'wisprFlow': False,
-                                  'freeGb': 100.0, 'recommended': 'large-v3-turbo',
-                                  'models': {'large-v3': {'gb': 3.1}, 'large-v3-turbo': {'gb': 1.6}}, 'gpuDownloadGb': 0})
+                                  'freeGb': 100.0, 'recommended': 'large-v3-turbo', 'customModel': None,
+                                  'models': {'large-v3': {'gb': 3.1, **absent}, 'large-v3-turbo': {'gb': 1.6, **absent}},
+                                  'gpuDownloadGb': 0})
         self.assertEqual((gpu['gpu'], gpu['recommended'], gpu['gpuDownloadGb']), (GPU, 'large-v3', 0.55))
+
+    def test_model_rows_say_what_is_here_and_what_is_in_use(self):
+        folder = make_model(models.models_dir() / 'large-v3')
+        rows = firstrun.whisper_models()
+        self.assertEqual((rows['large-v3']['installed'], rows['large-v3']['path']), (True, str(folder)))
+        self.assertFalse(rows['large-v3-turbo']['installed'])
+        turbo = make_model(models.models_dir() / 'large-v3-turbo')
+        speech.set_whisper_model(str(turbo))
+        rows = firstrun.whisper_models()
+        self.assertEqual((rows['large-v3']['active'], rows['large-v3-turbo']['active']), (False, True))
+        speech.set_whisper_model(str(folder))
+        rows = firstrun.whisper_models()
+        self.assertEqual((rows['large-v3']['active'], rows['large-v3-turbo']['active']), (True, False))
+        self.assertIsNone(firstrun.custom_model())
+
+    def test_a_model_outside_the_app_is_listed_as_the_users_own(self):
+        outside = make_model(self.temp / 'my models' / 'large-v3')
+        speech.set_whisper_model(str(outside))
+        self.assertEqual(firstrun.custom_model()['path'], str(outside))
+        self.assertFalse(firstrun.whisper_models()['large-v3']['active'])
+
+    def test_delete_one_model_by_name(self):
+        idle = make_model(models.models_dir() / 'large-v3')
+        used = make_model(models.models_dir() / 'large-v3-turbo')
+        speech.set_whisper_model(str(used))
+        with self.assertRaises(ValueError):
+            speech.delete_model('../large-v3')
+        self.assertEqual(speech.delete_model('large-v3'), {'speechConfigured': True})
+        self.assertFalse(idle.exists())
+        self.assertEqual(speech.speech_model_path(), used)
+        self.assertEqual(speech.delete_model('large-v3-turbo'), {'speechConfigured': False})
+        self.assertFalse(used.exists())
+
+    def test_setup_progress_says_which_model(self):
+        self.assertIn('model', firstrun.JOB.progress())
 
     def test_delete_current_model_only_when_app_owned(self):
         outside = make_model(self.temp / 'my models' / 'large-v3')

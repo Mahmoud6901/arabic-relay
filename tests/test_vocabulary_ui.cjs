@@ -49,7 +49,7 @@ const count=url=>requests.filter(r=>r.url===url).length;
 (async()=>{
  await flush();
  // 1. Rules and proposals are listed; each control calls the matching route.
- assert.equal(nodes.get('aliasStatus').textContent,'1 rule · 1 active · 1 proposal');
+ assert.equal(nodes.get('aliasStatus').textContent,'1 قاعدة · 1 شغالة · 1 اقتراح');
  assert.ok(nodes.get('aliasList').innerHTML.includes('ريدزاين'));
  assert.ok(nodes.get('aliasProposals').innerHTML.includes('login flow'));
  nodes.get('aliasHeard').value='دارك مود';nodes.get('aliasCanonical').value='dark mode';
@@ -72,16 +72,16 @@ const count=url=>requests.filter(r=>r.url===url).length;
  const darkId=rules.find(r=>r.canonical==='dark mode').id,addsBefore=count('/api/aliases/add');
  nodes.get('aliasList').listeners.click({target:{closest:sel=>sel==='[data-alias-edit]'?{dataset:{aliasEdit:String(darkId)}}:null}});
  assert.equal(nodes.get('aliasHeard').value,'دارك مود');assert.equal(nodes.get('aliasCanonical').value,'dark mode');
- assert.equal(nodes.get('aliasAdd').textContent,'Save rule');assert.equal(nodes.get('aliasCancelEdit').hidden,false);
+ assert.equal(nodes.get('aliasAdd').textContent,'احفظ القاعدة');assert.equal(nodes.get('aliasCancelEdit').hidden,false);
  nodes.get('aliasCanonical').value='Dark Mode';
  await nodes.get('aliasAdd').click();await flush();
  assert.deepEqual(JSON.parse(requests.filter(r=>r.url==='/api/aliases/update').at(-1).options.body),{id:darkId,heard:'دارك مود',canonical:'Dark Mode'});
  assert.equal(count('/api/aliases/add'),addsBefore);
- assert.equal(nodes.get('aliasAdd').textContent,'Add rule');assert.equal(nodes.get('aliasHeard').value,'');
+ assert.equal(nodes.get('aliasAdd').textContent,'ضيف قاعدة');assert.equal(nodes.get('aliasHeard').value,'');
  assert.ok(nodes.get('aliasList').innerHTML.includes('Dark Mode'));
  nodes.get('aliasList').listeners.click({target:{closest:sel=>sel==='[data-alias-edit]'?{dataset:{aliasEdit:String(darkId)}}:null}});
  await nodes.get('aliasCancelEdit').click();
- assert.equal(nodes.get('aliasAdd').textContent,'Add rule');assert.equal(nodes.get('aliasCanonical').value,'');
+ assert.equal(nodes.get('aliasAdd').textContent,'ضيف قاعدة');assert.equal(nodes.get('aliasCanonical').value,'');
  // 2. A transcript: rules already applied by the server are announced; the original stays available.
  rules=[{id:1,heard:'ريدزاين',canonical:'redesign',enabled:1,provenance:'user'}];
  await nodes.get('record').click();await nodes.get('record').click();await flush(8);

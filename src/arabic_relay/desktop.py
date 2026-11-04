@@ -20,8 +20,75 @@ from . import diagnostics, server, locate, paths, speech, store, t3, updates, pa
 from .hotkey import RecordingHotkey
 
 
+PILL = {'capture': (147, 40), 'message': (400, 60)}   # logical pixels; the page's pill fills the window exactly
+FRAME = 16      # WinForms takes this much off a frameless window's requested size
+HISTORY_KEPT = 'اتنسخ، ما اتلصقش'
+
+
+def see_through(window):
+    """Windows paints a default backdrop behind WebView2's transparent page. Turning it off and extending the frame over
+    the whole window lets the page's own alpha reach the desktop, so the pill has smooth edges and nothing around it.
+    If any of this fails, a grey box shows behind the pill and recording still works."""
+    try:
+        import System
+        from System.Drawing import Color
+        native = window.native
+
+        def apply():
+            handle = ctypes.c_void_p(native.Handle.ToInt64())
+            dwm = ctypes.windll.dwmapi
+            native.BackColor = Color.Black      # black reads as fully see-through once the frame covers the window
+            dwm.DwmExtendFrameIntoClientArea(handle, ctypes.byref((ctypes.c_int * 4)(-1, -1, -1, -1)))
+            dwm.DwmSetWindowAttribute(handle, 38, ctypes.byref(ctypes.c_int(1)), 4)   # backdrop type: none
+            native.Invalidate()
+        native.Invoke(System.Action(apply))
+    except Exception:
+        logging.exception('The recording pill could not be made see-through')
+
+
+def leave_keyboard_alone(window):
+    """The pill shows while the user's app stays in front, so keys typed during a recording still reach that app.
+    pywebview activates a transparent window whatever its focus option says, so that one call is switched off here.
+    If this fails, the pill takes the keyboard while it is open and the paste still gives it back."""
+    try:
+        window.native.Activate = lambda: None
+    except Exception:
+        logging.exception('The recording pill could not leave the keyboard alone')
+
+
+def take_keyboard(window):
+    """Wispr Flow types into the pill, so with Flow alone the pill needs the keyboard."""
+    import System
+    native = window.native
+
+    def apply():
+        window.focus = True     # until this changes, pywebview puts no-activate back on every activation
+        del native.Activate
+        user32 = ctypes.windll.user32
+        handle = native.Handle.ToInt32()
+        user32.SetWindowLongW(handle, -20, user32.GetWindowLongW(handle, -20) & ~0x08000000)
+        native.Activate()
+    native.Invoke(System.Action(apply))
+
+
+def save_history(entry_id, english, destination):
+    with store.database() as db:
+        history.initialize(db)
+        history.record(db, entry_id, {'english': english, 'targets': [{'title': destination}]})
+
+
+def history_changed():
+    """The main window lists History. Refreshing it runs apart from the paste, so it can never delay or fail one."""
+    def tell():
+        try:
+            webview.windows[0].evaluate_js('window.relayHistoryChanged?.()')
+        except Exception:
+            logging.debug('The main window did not refresh History', exc_info=True)
+    threading.Thread(target=tell, daemon=True).start()
+
+
 class QuickCapture:
-    """A separate, temporary editor; it never replaces the main window's draft."""
+    """The recording pill: a small temporary window that exists from the shortcut until the words are delivered."""
     def __init__(self, choice='ctrl-alt-space'):
         self.window = None
         self.ready = False
@@ -53,14 +120,16 @@ class QuickCapture:
                 screen_width, screen_height = int(screen.width / scale), int(screen.height / scale)
                 self.screen_bounds = (int(screen.x / scale), int(screen.y / scale), screen_width, screen_height)
                 self.stage = 'capture'
-                width, height = min(420, screen_width - 40), 88
+                width, height = PILL['capture']
                 self.window = webview.create_window(
-                    'Arabic Relay — Quick capture', server.ORIGIN + '/?quick=1',
-                    js_api=DesktopApi(self, quick=True), width=width, height=height,
+                    'Arabic Relay — تسجيل', server.ORIGIN + '/?quick=1',
+                    js_api=DesktopApi(self, quick=True), width=width + FRAME, height=height + FRAME,
                     x=int(screen.x / scale) + (screen_width - width) // 2,
                     y=int(screen.y / scale) + screen_height - height - 70,
-                    min_size=(280, 80), frameless=True, easy_drag=False,
-                    on_top=True, background_color='#08090a', text_select=True)
+                    min_size=(120, 40), frameless=True, easy_drag=False,
+                    on_top=True, focus=False, transparent=True, shadow=False, background_color='#000000')
+                see_through(self.window)    # the form exists by now, and shows only once its page starts loading
+                leave_keyboard_alone(self.window)
                 self.window.events.closing += self.closing
                 self.window.events.closed += self.closed
             elif self.ready:
@@ -76,18 +145,23 @@ class QuickCapture:
         with self.lock:
             if self.window and not self.exiting and not self.ready:
                 self.ready = True
+                self.place()    # WinForms' take-off for a frameless window depends on the display scale
                 self.window.evaluate_js('void window.relayQuickToggle()')
+
+    def place(self):
+        """Exact size, centred above the bottom of the screen."""
+        x, y, screen_width, screen_height = self.screen_bounds
+        width, height = PILL[self.stage]
+        width = min(width, screen_width - 40)
+        self.window.resize(width, height)
+        self.window.move(x + (screen_width - width) // 2, y + screen_height - height - 70)
 
     def set_stage(self, stage):
         with self.lock:
             if not self.window or self.stage == stage:
                 return
             self.stage = stage
-            x, y, screen_width, screen_height = self.screen_bounds
-            width = min(620 if stage == 'review' else 420, screen_width - 40)
-            height = min(560, screen_height - 100) if stage == 'review' else 88
-            self.window.resize(width, height)
-            self.window.move(x + (screen_width - width) // 2, y + screen_height - height - 70)
+            self.place()
 
     def closing(self):
         if self.allow_close or self.exiting:
@@ -150,13 +224,42 @@ class DesktopApi:
                 capture.paste_attempted = True
             result = capture.paster.paste(target, body.get('english'), attempted)
             try:
-                with store.database() as db:
-                    history.initialize(db)
-                    history.record(db, capture.capture_id, {'english': body['english'],
-                                   'targets': [{'title': target.name + ' · paste requested'}]})
+                save_history(capture.capture_id, body['english'], target.name)
             except sqlite3.Error:
                 result['message'] += ' History could not be saved; do not paste again just to save history.'
-            return result
+        history_changed()
+        return result
+
+    def keep_text(self, body, token):
+        """The paste could not land: the words stay in History and on the clipboard, and the pill says where."""
+        if token != server.CSRF or not self._quick or not self._capture or not isinstance(body, dict):
+            raise ValueError('Invalid paste request.')
+        text = body.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text) > 16000 or '\0' in text:
+            raise ValueError('Invalid paste request.')
+        capture = self._capture
+        saved = copied = True
+        with capture.lock:
+            entry = capture.capture_id or secrets.token_urlsafe(24)
+            try:
+                save_history(entry, text, HISTORY_KEPT)
+            except sqlite3.Error:
+                logging.exception('Kept text could not be saved to History')
+                saved = False
+            try:
+                capture.paster.copy(text)
+            except (ValueError, OSError):
+                logging.exception('Kept text could not be copied')
+                copied = False
+        history_changed()
+        return {'saved': saved, 'copied': copied}
+
+    def show_main(self, tab, token):
+        """The recording cannot start without a setting: show the place to fix it."""
+        if token != server.CSRF or not self._capture or tab not in ('history', 'models', 'settings'):
+            raise ValueError('Invalid request.')
+        webview.windows[0].evaluate_js(f"window.relayShowTab?.('{tab}')")
+        focus_window(os.getpid())
 
     def finish_paste(self, capture_id, token):
         if token != server.CSRF or not self._quick or not self._capture:
@@ -192,8 +295,15 @@ class DesktopApi:
             raise ValueError('Invalid request.')
         self._capture.loaded()
 
+    def quick_keyboard(self, token):
+        if token != server.CSRF or not self._quick or not self._capture:
+            raise ValueError('Invalid request.')
+        window = self._capture.window
+        if window:
+            take_keyboard(window)
+
     def quick_stage(self, stage, token):
-        if token != server.CSRF or not self._quick or not self._capture or stage not in ('capture', 'review'):
+        if token != server.CSRF or not self._quick or not self._capture or stage not in PILL:
             raise ValueError('Invalid request.')
         self._capture.set_stage(stage)
 
@@ -237,7 +347,7 @@ def run():
     try:
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         window = webview.create_window('Arabic Relay', server.ORIGIN, js_api=DesktopApi(capture),
-                             width=1380, height=940, min_size=(760, 650),
+                             width=900, height=680, min_size=(640, 520),
                              background_color='#08090a', text_select=True)
         window.events.closed += capture.stop
         window.events.loaded += speech.prewarm   # only when the user asked for it; never blocks the window

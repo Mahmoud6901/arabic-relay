@@ -43,7 +43,7 @@ class ModelFolder(unittest.TestCase):
         folder = self.root / 'pt'
         folder.mkdir()
         (folder / 'large-v3.pt').write_bytes(b'')
-        with self.assertRaisesRegex(ValueError, r'\.pt'):
+        with self.assertRaisesRegex(ValueError, 'بصيغة pt'):
             locate.validate_model_folder(folder)
 
     def test_whisper_cpp_model_is_rejected_by_name(self):
@@ -142,7 +142,7 @@ class Tools(unittest.TestCase):
         text = self.root / 'codex.txt'
         text.write_text('x')
         for bad in (text, self.root, self.root / 'missing.exe'):
-            with self.assertRaisesRegex(ValueError, r'^Choose the program file \(\.exe\)\.$'):
+            with self.assertRaisesRegex(ValueError, r'^اختار ملف البرنامج بصيغة exe\.$'):
                 locate.set_tool_path('codex', str(bad))
 
     def test_deleted_override_falls_back_and_is_reported(self):

@@ -55,7 +55,7 @@ def prepare_worker(request_id):
     """Load weights while the microphone records; no audio is collected or sent here."""
     global PREPARED
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,100}', request_id):
-        raise ValueError('Invalid recording request.')
+        raise ValueError('طلب التسجيل مش صحيح.')
     folder, device = speech_model_path(), speech_device()
     if folder is None:
         return {'prepared': False}
@@ -110,7 +110,7 @@ def speech_model_path():
 
 def set_whisper_model(folder):
     if not isinstance(folder, str) or not folder.strip() or len(folder) > 1000:
-        raise ValueError('Choose a model folder.')
+        raise ValueError('اختار فولدر النموذج.')
     model = locate.validate_model_folder(folder.strip())
     store.set_setting('whisper_model_dir', str(model))
     return {'speechConfigured': True, 'modelPath': str(model)}
@@ -162,12 +162,12 @@ def engine_settings():
 def set_engine_settings(idle_seconds=None, prewarm=None, retry_gpu=False):
     if idle_seconds is not None:
         if type(idle_seconds) is not int or idle_seconds not in (0, 300, 900, 3600):
-            raise ValueError('Choose how long the speech model stays loaded.')
+            raise ValueError('اختار النموذج يفضل متحمّل قد إيه.')
         store.set_setting('engine_idle_seconds', idle_seconds)
         engine_host.HOST.watch(idle_seconds)
     if prewarm is not None:
         if type(prewarm) is not bool:
-            raise ValueError('Choose whether to warm the speech model at launch.')
+            raise ValueError('اختار هل النموذج يجهز أول ما البرنامج يفتح.')
         store.set_setting('engine_prewarm', int(prewarm))
     if retry_gpu:
         clear_gpu_backoff()
@@ -196,7 +196,7 @@ def _prewarm(folder):
 
 def set_cpu_only(enabled):
     if not isinstance(enabled, bool):
-        raise ValueError('Choose whether speech always uses the CPU.')
+        raise ValueError('اختار هل الكلام يشتغل دايمًا على المعالج.')
     store.set_setting('speech_device', 'cpu' if enabled else 'auto')
     return {'cpuOnly': enabled}
 
@@ -216,10 +216,25 @@ def missing_model():
 def delete_current_model():
     current = speech_model_path()
     if current is None:
-        raise ValueError('No speech model is set up.')
+        raise ValueError('مفيش نموذج كلام متجهز.')
+    engine_host.HOST.stop()     # Windows will not delete files the loaded model holds open
     models.delete_model(current)
     store.set_setting('whisper_model_dir', '')
     return {'speechConfigured': speech_model_path() is not None}
+
+
+def delete_model(name=None):
+    """Deletes one model this app downloaded; without a name, the one in use."""
+    if name is None:
+        return delete_current_model()
+    if name not in models.MODELS:
+        raise ValueError('اختار Whisper large-v3 أو large-v3-turbo.')
+    folder, current = models.models_dir() / name, speech_model_path()
+    if current is not None and Path(current).resolve() == folder.resolve():
+        return delete_current_model()
+    if folder.is_dir():
+        models.delete_model(folder)
+    return {'speechConfigured': current is not None}
 
 
 def status():
@@ -239,7 +254,7 @@ def open_wispr_flow():
         if executable:
             subprocess.Popen([str(executable)], creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         elif not webbrowser.open('https://wisprflow.ai/downloads'):
-            raise ValueError('Open wisprflow.ai/downloads in your browser to install Wispr Flow.')
+            raise ValueError('افتح wisprflow.ai/downloads في المتصفح وثبّت Wispr Flow.')
     return {'installed': executable is not None}
 
 
@@ -249,12 +264,12 @@ def load_cohere_key():
         try:
             return store.protect(path.read_bytes(), True).decode() if path.exists() else ''
         except Exception:
-            raise ValueError('Re-enter your Cohere API key in Speech details.') from None
+            raise ValueError('اكتب مفتاح Cohere تاني من تبويب النماذج.') from None
 
 
 def save_cohere_key(key):
     if not isinstance(key, str) or len(key) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in key.strip()):
-        raise ValueError('Enter a Cohere API key without spaces or line breaks.')
+        raise ValueError('اكتب مفتاح Cohere من غير مسافات أو سطور جديدة.')
     key = key.strip()
     with store.AUTH_LOCK:
         path = paths.DATA / 'cohere.bin'
@@ -269,9 +284,9 @@ def save_cohere_key(key):
 
 def transcript_result(text, model):
     if not isinstance(text, str) or not text.strip():
-        raise ValueError('No speech was detected. Record again or type your transcript.')
+        raise ValueError('ما سمعتش كلام. سجّل تاني.')
     if len(text) > 12000:
-        raise ValueError('This transcript is too long. Use a shorter recording.')
+        raise ValueError('الكلام طويل أوي. سجّل حاجة أقصر.')
     raw = text.strip()
     # Return transcription immediately. Optional correction is a separate request after the UI displays it.
     return {'text': raw, 'rawText': raw, 'termsRestored': False, 'model': model}
@@ -293,7 +308,7 @@ def cohere_clips(audio):
                     or not 0 < frames <= 300 * 16000 or len(pcm) != frames * 2):
                 raise ValueError()
     except (ValueError, EOFError, wave.Error):
-        raise ValueError('Use a valid mono WAV recording under five minutes.') from None
+        raise ValueError('التسجيل لازم يكون WAV سليم وأقل من خمس دقايق.') from None
     if frames <= 120 * 16000:
         return [audio]
     import numpy as np
@@ -332,13 +347,13 @@ def cohere_clips(audio):
 
 def transcribe_cohere(audio, kind):
     if kind != 'audio/wav':
-        raise ValueError('Cohere needs WAV audio. Record again using the Cohere option.')
+        raise ValueError('Cohere محتاج صوت WAV. سجّل تاني.')
     clips = cohere_clips(audio)
     key = load_cohere_key()
     if not key:
-        raise ValueError('Add your Cohere API key in Speech details before recording.')
+        raise ValueError('ضيف مفتاح Cohere من تبويب النماذج الأول.')
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
-        raise ValueError('A recording is already being transcribed. Wait for it to finish.')
+        raise ValueError('فيه تسجيل بيتحوّل دلوقتي. استنى لما يخلص.')
     try:
         if len(clips) == 1:
             text = cohere_request(clips[0], key)
@@ -380,42 +395,42 @@ def cohere_request(audio, key):
                     429: 'Cohere reached an account or rate limit. Retry manually later.'}
         raise ValueError(messages.get(error.code, 'Cohere could not transcribe this recording. Retry manually later.')) from None
     except (OSError, ValueError):
-        raise ValueError('Cohere could not complete transcription. Check your connection and retry manually.') from None
+        raise ValueError('Cohere ما قدرش يكمّل. راجع النت وجرّب تاني.') from None
     text = result.get('text')
     if not isinstance(text, str) or len(text) > 12000:
-        raise ValueError('Cohere returned an invalid transcript. Retry manually.')
+        raise ValueError('Cohere رجّع نص مش سليم. جرّب تاني.')
     return text.strip()
 
 
 def parse_keywords(vocabulary):
     if not isinstance(vocabulary, str) or len(vocabulary) > 3000:
-        raise ValueError('Keep the vocabulary hints under 3,000 characters.')
+        raise ValueError('الكلمات المساعدة لازم تكون أقل من 3,000 حرف.')
     keywords = [word.strip() for word in vocabulary.replace('\n', ',').split(',') if word.strip()]
     if len(keywords) > 40 or any(len(word) > 80 or any(c in word for c in '<>\r\n') for word in keywords):
-        raise ValueError('Use up to 40 short vocabulary hints, separated by commas.')
+        raise ValueError('استخدم لحد 40 كلمة قصيرة، بينهم فاصلة.')
     # Only hints the user typed reach Whisper. Learned English words pushed it to write mixed speech as English.
     return list(dict.fromkeys(keywords))
 
 
 def transcribe(audio, content_type, vocabulary='', provider='whisper', inline_mode=False, retry=False, retry_seconds=30, cancel_event=None):
     if retry and (not inline_mode or not 0 < retry_seconds <= 30):
-        raise ValueError('The recognition retry budget has expired. Edit the source manually.')
+        raise ValueError('خلصت محاولات التعرف على الكلام.')
     if provider not in ('whisper', 'cohere'):
-        raise ValueError('Choose Local Whisper or Cohere for microphone transcription.')
+        raise ValueError('اختار Whisper أو Cohere للتسجيل بالمايك.')
     formats = {'audio/webm': ('webm', lambda b: b.startswith(b'\x1aE\xdf\xa3')),
                'audio/wav': ('wav', lambda b: b.startswith(b'RIFF') and b[8:12] == b'WAVE'),
                'audio/mp4': ('mp4', lambda b: b[4:8] == b'ftyp')}
     kind = content_type.split(';', 1)[0].strip().lower()
     if kind not in formats or not 0 < len(audio) <= MAX_AUDIO or not formats[kind][1](audio):
-        raise ValueError('Record a valid WebM, WAV, or MP4 clip under 24 MB.')
+        raise ValueError('التسجيل لازم يكون WebM أو WAV أو MP4 وأقل من 24 MB.')
     keywords = parse_keywords(vocabulary)
     if provider == 'cohere':
         return transcribe_cohere(audio, kind)
     folder = speech_model_path()
     if folder is None:
-        raise ValueError('Choose a Whisper model folder in Speech details, then click Refresh.')
+        raise ValueError('اختار نموذج Whisper من تبويب النماذج.')
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
-        raise ValueError('A recording is already being transcribed. Wait for it to finish.')
+        raise ValueError('فيه تسجيل بيتحوّل دلوقتي. استنى لما يخلص.')
     started = time.monotonic()
     try:
         if engine_enabled():
@@ -516,7 +531,7 @@ def incremental_enabled():
 
 def set_incremental(enabled):
     if type(enabled) is not bool:
-        raise ValueError('Choose whether to process speech while you talk.')
+        raise ValueError('اختار هل الكلام يتحوّل وإنت بتتكلم.')
     store.set_setting('incremental_dictation', int(enabled))
     if not enabled and not TRANSCRIBE_LOCK.locked():
         engine_host.HOST.retire()
@@ -533,9 +548,9 @@ def engine_request(key, header, payload, timeout=300, cancel_event=None):
             result = engine_host.HOST.request(header, payload, timeout=timeout, cancel_event=cancel_event)
         except engine_host.EngineError as error:
             if error.code == 'CANCELLED':
-                raise ValueError('Transcription cancelled. Your source is preserved.') from None
+                raise ValueError('اتلغى التحويل.') from None
             if error.code == 'TIMEOUT':
-                raise ValueError('Local transcription took too long. Your recording can be saved or retried manually.') from None
+                raise ValueError('التحويل خد وقت طويل. جرّب تاني.') from None
             if error.code in ('ENGINE_STOPPED', 'NOT_READY') and launched == 'cuda' and not header.get('retry'):
                 logging.error('Speech engine stopped on the GPU; retrying this recording on the CPU')
                 continue
@@ -546,7 +561,7 @@ def engine_request(key, header, payload, timeout=300, cancel_event=None):
             # The GPU worker stopped and the same audio then decoded on the CPU: the GPU, not the recording, failed.
             record_gpu_failure('device')
         return result
-    raise ValueError('The speech engine stopped. Record again to restart it.')
+    raise ValueError('محرك الكلام وقف. سجّل تاني عشان يشتغل.')
 
 
 LAST_DEVICE_REPORT = None
@@ -595,7 +610,7 @@ incremental.REGISTRY.on_release = _stream_released
 def stream_start(job_id, inline_mode=False, vocabulary=''):
     """Begin processing during speech for one recording; {'accepted': False} keeps the full-clip path."""
     if type(inline_mode) is not bool:
-        raise ValueError('Invalid recording request.')
+        raise ValueError('طلب التسجيل مش صحيح.')
     expire_streams()
     if not incremental_enabled():
         return {'accepted': False, 'reason': 'disabled'}
@@ -642,7 +657,7 @@ WHOLE_READING_SECONDS = 12
 
 def stream_finish(job_id, last_seq, total_samples):
     if type(last_seq) is not int or type(total_samples) is not int:
-        raise ValueError('Invalid recording request.')
+        raise ValueError('طلب التسجيل مش صحيح.')
     job = incremental.REGISTRY.get(job_id)
     stopped = time.monotonic()
     try:
@@ -653,10 +668,10 @@ def stream_finish(job_id, last_seq, total_samples):
         planned = reason == incremental.WHOLE_READING
         if result is None:
             if job.cancelled.is_set():
-                raise ValueError('This recording was cancelled.')
+                raise ValueError('التسجيل اتلغى.')
             pcm = bytes(job.pcm)
             if not pcm:
-                raise ValueError('No speech was detected. Record again or type your transcript.')
+                raise ValueError('ما سمعتش كلام. سجّل تاني.')
             if not planned:
                 logging.info('Incremental dictation: whole-recording fallback (%s)', reason.split(':')[0])
             # The authoritative recording, decoded whole with the baseline settings for this writing mode.
@@ -724,7 +739,7 @@ def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=Fa
                     if cancel_event.is_set():
                         process.kill()
                         process.communicate()
-                        raise ValueError('Transcription cancelled. Your source is preserved.')
+                        raise ValueError('اتلغى التحويل.')
                     if time.monotonic() >= deadline:
                         raise subprocess.TimeoutExpired(command, retry_seconds if retry else 300)
                     try:
@@ -735,7 +750,7 @@ def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=Fa
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate()
-            raise ValueError('Local transcription took too long. Your recording can be saved or retried manually.') from None
+            raise ValueError('التحويل خد وقت طويل. جرّب تاني.') from None
         try:
             result = json.loads(stdout)
         except (ValueError, UnicodeDecodeError):
@@ -754,7 +769,7 @@ def run_worker(folder, audio, keywords, check=False, inline_mode=False, retry=Fa
             raise ValueError(messages.get(result['error'], 'Local speech failed on this recording. Record again; if it keeps failing, turn on Always use CPU in Settings.'))
         logging.getLogger(__name__).error('Speech worker stopped (exit %s, attempt %s): %s', process.returncode, attempt,
                                           (stderr or b'')[-2000:].decode(errors='replace'))
-    raise ValueError('The speech engine stopped. Record again to restart it.')
+    raise ValueError('محرك الكلام وقف. سجّل تاني عشان يشتغل.')
 
 
 def silent_wav(seconds=2):
@@ -771,9 +786,9 @@ def check():
     """The post-download test: two seconds of silence through the real worker. Reports the device that worked."""
     folder = speech_model_path()
     if folder is None:
-        raise ValueError('The speech model is missing. Download it again.')
+        raise ValueError('نموذج الكلام مش موجود. حمّله تاني.')
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
-        raise ValueError('A recording is being transcribed. Try again when it finishes.')
+        raise ValueError('فيه تسجيل بيتحوّل. جرّب لما يخلص.')
     try:
         if engine_enabled():
             result = engine_request((str(folder), speech_device()), {'format': 'encoded', 'keywords': [], 'check': True}, silent_wav())

@@ -106,7 +106,7 @@ class Storage(unittest.TestCase):
 
     def test_edit_disable_delete_and_duplicates(self):
         rule_id = aliases.add('دارك مود', 'dark mode')['aliases'][0]['id']
-        with self.assertRaisesRegex(ValueError, 'already has a rule'):
+        with self.assertRaisesRegex(ValueError, 'ليها قاعدة بالفعل'):
             aliases.add('دارك  مود', 'Dark Mode')
         aliases.update(rule_id, canonical='Dark Mode')
         self.assertEqual(aliases.apply('ضيف دارك مود')['text'], 'ضيف Dark Mode')
@@ -114,7 +114,7 @@ class Storage(unittest.TestCase):
         self.assertEqual(aliases.apply('ضيف دارك مود')['text'], 'ضيف دارك مود')
         aliases.delete(rule_id)
         self.assertEqual(aliases.listing()['aliases'], [])
-        with self.assertRaisesRegex(ValueError, 'no longer exists'):
+        with self.assertRaisesRegex(ValueError, 'مش موجودة'):
             aliases.update(rule_id, enabled=True)
 
     def test_validation_rejects_unsafe_rules(self):
