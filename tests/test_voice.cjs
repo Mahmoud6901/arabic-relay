@@ -44,7 +44,7 @@ context.window={location:{search:quickMode?'?quick=1':''},MediaRecorder:Recorder
 context.confirm=()=>true;
 for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-async function toggleCapture(){const pending=context.window.relayQuickToggle();if(nodes.get('draftConfirm').open)nodes.get('draftConfirmAccept').click();await pending;}
+async function toggleCapture(){await context.window.relayQuickToggle();}
 (async()=>{
  await flush();
  if(quickMode){

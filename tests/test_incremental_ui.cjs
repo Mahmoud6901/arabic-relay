@@ -58,7 +58,7 @@ context.confirm=()=>true;
 for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
 const flush=async(n=3)=>{for(let i=0;i<n;i++)await new Promise(resolve=>setTimeout(resolve,0));};
 const count=url=>requests.filter(r=>r.url===url).length;
-async function record(){if(quickMode){const pending=context.window.relayQuickToggle();if(nodes.get('draftConfirm').open)nodes.get('draftConfirmAccept').click();await pending;}else await nodes.get('record').click();await flush();}
+async function record(){if(quickMode)await context.window.relayQuickToggle();else await nodes.get('record').click();await flush();}
 async function stop(){await nodes.get('stopRecording').click();await flush(8);}
 (async()=>{
  await flush();
@@ -66,7 +66,7 @@ async function stop(){await nodes.get('stopRecording').click();await flush(8);}
   // Shortcut capture: provisional text never reaches the paste path; the final prompt pastes exactly once.
   await record();
   workletNodes.at(-1).emit(new Int16Array(16000));await flush();
-  assert.ok(nodes.get('captureHint').textContent.includes('redesign'));
+  assert.ok(nodes.get('provisionalText').textContent.includes('redesign'));
   assert.equal(pastes.length,0);
   finishGate=new Promise(resolve=>{context.releaseFinish=resolve;});
   const stopping=stop();await flush();
