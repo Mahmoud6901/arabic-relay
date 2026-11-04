@@ -8,7 +8,9 @@ const quickMode=process.argv.includes('--quick');
 const nodes=new Map();
 function element(){return {value:'',disabled:false,hidden:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
 for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
-const requests=[],storage=new Map(),contexts=[],workletNodes=[],pastes=[];
+const requests=[],storage=new Map(),contexts=[],workletNodes=[],pastes=[],stages=[];
+const inlineQuick=quickMode&&process.argv.includes('--inline');
+if(inlineQuick)storage.set('relay-writing-mode','inline');
 let micStarts=0,stops=0,incremental=true,chunkFailure=false,finishFailure=false,finishGate=null;
 class Recorder{
  static isTypeSupported(t){return t==='audio/webm;codecs=opus';}
@@ -50,7 +52,7 @@ const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,S
   else throw new Error('Unexpected request '+url);
   return {ok,json:async()=>data};
  }});
-const api={begin_capture:async()=>({captureId:'capture-1',available:true,app:'Notepad'}),paste_to_target:async body=>{pastes.push(body);return {status:'paste_requested',message:'Paste requested.'};},finish_paste:async()=>{},shortcut_status:async()=>({available:true}),quick_ready:async()=>{},quick_stage:async()=>{}};
+const api={begin_capture:async()=>({captureId:'capture-1',available:true,app:'Notepad'}),paste_to_target:async body=>{pastes.push(body);return {status:'paste_requested',message:'Paste requested.'};},finish_paste:async()=>{},shortcut_status:async()=>({available:true}),quick_ready:async()=>{},quick_stage:async stage=>{stages.push(stage);}};
 context.window={location:{search:quickMode?'?quick=1':''},MediaRecorder:Recorder,AudioWorkletNode:MockWorkletNode,AudioContext:MockAudioContext,addEventListener(){},pywebview:{api}};
 context.confirm=()=>true;
 for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
@@ -72,8 +74,9 @@ async function stop(){await nodes.get('stopRecording').click();await flush(8);}
   context.releaseFinish();finishGate=null;await stopping;await flush(10);
   assert.equal(count('/api/transcribe'),0);
   assert.equal(pastes.length,1);
-  assert.equal(pastes[0].english,'Redesign the home page.');
+  assert.equal(pastes[0].english,inlineQuick?'I want to redesign the page':'Redesign the home page.');
   assert.ok(!pastes[0].english.includes('عايز'));
+  assert.ok(!stages.includes('review'),'Stop, transcription, preparation and paste never expand the window');
   // A shortcut recording runs every stage automatically, so its timing names each stage and the total after Stop.
   assert.match(nodes.get('stageStatus').textContent,
    /^Paste requested · transcript \d+\.\d s · prompt \d+\.\d s · paste request \d+\.\d s · total after Stop \d+\.\d s$/,nodes.get('stageStatus').textContent);

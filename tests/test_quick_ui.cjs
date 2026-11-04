@@ -4,8 +4,9 @@ const vm=require('node:vm');
 const {boot,flush}=require('./test_translation_ui.cjs');
 async function ready(app){await flush();await flush();await flush();}
 function native(app,{failure=false,available=true}={}){
- const calls=[];
+ const calls=[];calls.stages=[];
  Object.assign(app.context.window.pywebview.api,{
+  quick_stage:async(stage)=>{calls.stages.push(stage);},
   begin_capture:async()=>({captureId:'one-recording',available,app:'Notepad'}),
   paste_to_target:async(body)=>{calls.push(body);if(failure)throw Error('Original input focus changed.');return {status:'paste_requested',message:'Paste shortcut sent. Enter was not pressed.'};},
   finish_paste:async()=>{calls.push('closed');}
@@ -23,6 +24,7 @@ function native(app,{failure=false,available=true}={}){
  assert.equal(app.posted('/api/translate').length,1);
  assert.equal(calls.length,2);assert.equal(calls[0].english,'Improve the login page.');
  assert.equal(calls[0].captureId,'one-recording');assert.equal(calls[1],'closed');
+ assert.ok(!calls.stages.includes('review'),'Successful dictation never opens the review window');
  // Each stage reports its own time; no recording ran, so there is no after-Stop total.
  assert.match(n.get('stageStatus').textContent,/^Paste requested · prompt \d+\.\d s · paste request \d+\.\d s$/);
  vm.runInContext('update();update();',app.context);await ready(app);
@@ -42,17 +44,34 @@ function native(app,{failure=false,available=true}={}){
  await app.context.window.relayQuickToggle();
  n.get('flowCapture').value='راجع الصفحة';n.get('flowCapture').listeners.input({inputType:'insertFromPaste'});
  await ready(app);assert.equal(calls.length,0);assert.equal(n.get('english').value,'Review the page.');
- // A shortcut recording pastes at once, and the window stays just long enough to show a likely mishearing.
+ // A likely mishearing neither opens review nor delays closing after successful paste.
  app=boot({quick:true,storedMode:'inline',status:{nativeDesktop:true},inlineHandler:async(path,body)=>path==='/api/inline'?{status:'ready',requestId:body.requestId,revision:body.revision,workingText:body.text,outputText:body.text,issues:[],replacements:[]}:{status:'ready',proof:{test:true}}});
  calls=native(app);await ready(app);n=app.nodes;
- vm.runInContext("inlineDoubtMs=1500;captureId='one-recording';pasteArmed=true;pasteInputReceived=true;",app.context);
+ vm.runInContext("captureId='one-recording';pasteArmed=true;pasteInputReceived=true;",app.context);
  app.context.acceptInlineRecognition({text:'Why do I want it',doubtfulWords:['Why do I'],issues:[]});
  vm.runInContext('inlineAutoPrepare=false;prepareInline();',app.context);await ready(app);
- assert.equal(calls.length,1,'The paste does not wait for the warning');
+ assert.equal(calls.length,2,'Paste and close do not wait for the warning');
  assert.match(n.get('notice').textContent,/Check “Why do I”: it may have been misheard\./);
  assert.doesNotMatch(n.get('notice').className,/success/,'The shortcut window hides success notices');
- await new Promise(r=>setTimeout(r,1600));
  assert.equal(calls[1],'closed');
+ assert.ok(!calls.stages.includes('review'));
+ // Romanized Arabic and ASR warnings do not require acknowledgement in shortcut dictation.
+ app=boot({quick:true,storedMode:'inline',status:{nativeDesktop:true},inlineHandler:async(path,body)=>path==='/api/inline'?{status:'ready',requestId:body.requestId,revision:body.revision,workingText:body.text,outputText:'Review the code.',spans:[{romanized:true}],issues:[],replacements:[]}:{status:'ready',proof:{test:true}}});
+ calls=native(app);await ready(app);
+ vm.runInContext("captureId='one-recording';pasteArmed=true;pasteInputReceived=true;",app.context);
+ app.context.acceptInlineRecognition({text:"Raja'un the code.",issues:[{code:'asr_warning'}]});
+ vm.runInContext('inlineAutoPrepare=false;prepareInline();',app.context);await ready(app);
+ assert.equal(app.nodes.get('inlineAcknowledge').checked,false);
+ assert.equal(calls[0].english,'Review the code.');assert.equal(calls[1],'closed');
+ assert.ok(!calls.stages.includes('review'));
+ // Incomplete translation is retained for recovery rather than silently pasted or discarded.
+ app=boot({quick:true,storedMode:'inline',status:{nativeDesktop:true},inlineHandler:async(path,body)=>({status:'needs_review',requestId:body.requestId,revision:body.revision,workingText:body.text,partialText:'It is جامد.',issues:[{message:'Ambiguous phrase'}],replacements:[]})});
+ calls=native(app);await ready(app);
+ vm.runInContext("captureId='one-recording';pasteArmed=true;pasteInputReceived=true;",app.context);
+ app.context.acceptInlineRecognition({text:'It is جامد.',issues:[]});
+ vm.runInContext('inlineAutoPrepare=false;prepareInline();',app.context);await ready(app);
+ assert.equal(calls.length,0);assert.equal(app.nodes.get('english').value,'It is جامد.');
+ assert.equal(app.context.document.documentElement.dataset.captureStage,'review');
  app=boot({status:{nativeDesktop:true}});calls=native(app);await ready(app);
  app.nodes.get('english').value='Manually edited draft';app.nodes.get('english').listeners.input();
  await ready(app);assert.equal(calls.length,0);

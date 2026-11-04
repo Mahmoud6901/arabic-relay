@@ -447,7 +447,6 @@ async function pastePrepared(auto){
   mark('paste');stageDone('Paste requested · '+timingSummary('paste'));
   const doubt=inlineMode()?inlineDoubt:'';
   sent=true;clearAudio();notice([result.message,doubt].filter(Boolean).join(' '),!doubt);   // the shortcut window hides success notices
-  if(doubt&&quickCapture)await new Promise(resolve=>setTimeout(resolve,inlineDoubtMs));   // already pasted: this is time to read what to check
   await window.pywebview.api.finish_paste(current.captureId,csrf);
  }catch(e){stageDone('Paste not requested');quickFailure=true;quickReview=true;quickFlowCapturing=false;notice(e.message+' Your prompt is ready to copy.');}
  finally{busy=false;pastePending=false;update();}
@@ -697,7 +696,7 @@ async function transcribeRecording(){
  const correctSpelling=autoSpellingEnabled===true&&!inlineMode()&&!quickCapture;const captureRevision=inlineRevision;if(inlineMode())inlineSpeechId=crypto.randomUUID();
  busy=true;update();renderProjects();$('recordTitle').textContent='Preparing Arabic + English transcript…';
  const generation=++jobGeneration;stage(dictationProvider==='cohere'?'Sending to Cohere':'Transcribing locally');
- notice(dictationProvider==='cohere'?'Sending this recording to Cohere for transcription. The message is never submitted.':'Whisper is transcribing locally. The message is never submitted.');
+ notice(dictationProvider==='cohere'?'Sending this recording to Cohere for transcription. The message is never submitted.':'Whisper is transcribing locally. The message is never submitted.',true);
  try{
   const prepared=speechPreparation;speechPreparation=null;if(prepared)await prepared.ready;
   const live=liveStream;liveStream=null;let r=null;
@@ -799,12 +798,12 @@ $('copyCrash').addEventListener('click',copyDiagnostics);$('copyDiagnostics').ad
 $('dismissCrash').addEventListener('click',async()=>{try{await api('/api/crash/dismiss',{});$('crashBanner').hidden=true;}catch(e){notice(e.message);}});
 
 let inlineTimer=null,inlineComposing=false,inlineRetryAvailable=false;
-let inlineModeValue='craft',inlineSpeechId=null,inlineRevision=0,inlinePendingId=null,inlineSourceText='',inlineSourceDirty=false,inlineNeedsTranslation=false,inlineOriginalText='',inlineIssues=[],inlineAutoPrepare=false,inlineAudioExpiry=null,inlineRetries=0,inlineRetryMs=0,inlineSeconds=null,inlineCandidateText='',inlineAsrWarning=false,inlineDoubt='',inlineDoubtMs=3000;
+let inlineModeValue='craft',inlineSpeechId=null,inlineRevision=0,inlinePendingId=null,inlineSourceText='',inlineSourceDirty=false,inlineNeedsTranslation=false,inlineOriginalText='',inlineIssues=[],inlineAutoPrepare=false,inlineAudioExpiry=null,inlineRetries=0,inlineRetryMs=0,inlineSeconds=null,inlineCandidateText='',inlineAsrWarning=false,inlineDoubt='';
 try{if(localStorage.getItem('relay-writing-mode')==='inline')inlineModeValue='inline';}catch{}
 function inlineMode(){return inlineModeValue==='inline';}
 function inlineTerms(){return $('inlineTerms').value.split(',').map(x=>x.trim()).filter(Boolean);}
 function inlineBody(text){return {text,revision:inlineRevision,requestId:crypto.randomUUID(),protectedTerms:inlineTerms()};}
-function inlineSendable(){return !inlineTimer&&!inlineComposing&&!inlinePendingId&&!inlineNeedsTranslation&&!Array.from($('english').value).some(c=>/\p{Script=Arabic}/u.test(c)&&/\p{Letter}/u.test(c))&&!!$('english').value.trim()&&(!inlineAsrWarning||$('inlineAcknowledge').checked);}
+function inlineSendable(){return !inlineTimer&&!inlineComposing&&!inlinePendingId&&!inlineNeedsTranslation&&!Array.from($('english').value).some(c=>/\p{Script=Arabic}/u.test(c)&&/\p{Letter}/u.test(c))&&!!$('english').value.trim()&&(quickCapture||!inlineAsrWarning||$('inlineAcknowledge').checked);}
 function cancelInline(){clearTimeout(inlineTimer);inlineTimer=null;if(inlineSpeechId&&liveFinishing){liveFinishing.cancelled=true;api('/api/stream/cancel',{jobId:liveFinishing.jobId}).catch(()=>{});}for(const id of [inlinePendingId,inlineSpeechId])if(id)api('/api/inline/cancel',{requestId:id}).catch(()=>{});inlinePendingId=null;}
 function inlineEdited(){inlineDoubt='';inlineRevision++;inlineAliasChanges='';cancelInline();inlineNeedsTranslation=false;inlineRetryAvailable=false;inlineIssues=[];$('inlineAcknowledge').checked=false;$('inlineStatus').textContent='Edited by you. Arabic phrases must be translated before sending.';}
 function resetInline(){inlineComposing=false;inlineEdited();inlineSourceText='';inlineOriginalText='';inlineSourceDirty=false;inlineCandidateText='';inlineAsrWarning=false;inlineRetries=0;inlineRetryMs=0;inlineSeconds=null;$('inlineSource').value='';$('inlineOriginal').textContent='';$('inlineChanges').innerHTML='';$('inlineProvenance').textContent='';$('inlineEvidence').textContent='';$('inlineCandidatePanel').hidden=true;$('inlineDetails').open=false;}
@@ -884,7 +883,7 @@ async function prepareInline(){
   mark('prompt');stageDone(result.status==='ready'?'Prompt ready · '+timingSummary('prompt'):'Needs review · '+timingSummary());
   if(result.status==='ready')$('english').value=result.outputText;
   else if(result.partialText)$('english').value=result.partialText;
-  // Rewritten from garbled recognition: it can read as fluent English and still be wrong, so it waits for an explicit OK.
+  // Keep recognition warnings in the editor; shortcut dictation pastes the finished translation directly.
   if(result.status==='ready'&&result.outputText!==source&&result.spans?.some(s=>s.romanized)){inlineAsrWarning=true;inlineDoubt='Part of this was misheard, so its translation is a best guess. Check it.';}
   $('inlineChanges').innerHTML=inlineAliasChanges+(result.replacements||[]).map(r=>`<p><bdi>${esc(r.source_text)}</bdi> → <mark><bdi>${esc(r.replacement_text||'Needs review')}</bdi></mark></p>`).join('');
   $('inlineStatus').textContent=[inlineDoubt,...(result.status==='ready'?[result.translator==='local'?'Translated on this computer.':'','Ready to review. English outside the translated phrases is unchanged. Shortcut recordings paste automatically when ready.']:inlineIssues.map(i=>i.message))].filter(Boolean).join(' ');
@@ -970,9 +969,11 @@ window.relayQuickToggle=async()=>{
 };
 function updateQuickSurface(){
  if(!quickCapture)return;
- const pending=busy||!!inlinePendingId||!!inlineTimer||!!quickTimer||quickComposing||inlineComposing;
+ const pending=busy||!!inlinePendingId||!!inlineTimer||!!quickTimer||quickComposing||inlineComposing||inlineAutoPrepare;
  const hasPrompt=!!$('english').value.trim();
- if(!listening&&!pending&&(hasPrompt||quickFailure))quickReview=true;
+ // Stay compact through preparation and delivery. Open the editor only when delivery needs recovery.
+ const automatic=pastePending||sent||(pasteArmed&&pasteInputReceived&&hasPrompt&&(!inlineMode()||inlineSendable()));
+ if(!listening&&!pending&&!automatic&&(hasPrompt||quickFailure))quickReview=true;
  if(quickFlowCapturing)quickReview=false;
  const stage=quickReview?'review':'capture';
  document.documentElement.dataset.captureStage=stage;
