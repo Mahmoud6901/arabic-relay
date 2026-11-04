@@ -22,7 +22,7 @@ function expectEnglish(where,text){const shown=english.tr(text);if(ARABIC.test(s
 // 1. A saved Arabic choice stays exactly as written; otherwise English is the default.
 assert.equal(arabic.documentElement.lang,undefined);assert.equal(arabic.documentElement.dir,undefined);
 assert.equal(arabic.tr('جاهز'),'جاهز');
-assert.equal(arabic.tr('{count} من 20',{count:3}),'3 من 20');
+assert.equal(arabic.tr('{count} من 10',{count:3}),'3 من 10');
 for(const stored of [null,'','fr']){
  assert.equal(language(stored).documentElement.lang,'en');
  assert.equal(language(stored).documentElement.dir,'ltr');
@@ -32,7 +32,7 @@ assert.equal(language(null,true).documentElement.lang,'en','Unavailable storage 
 // 2. English sets the direction before the first paint and fills in values.
 assert.equal(english.documentElement.lang,'en');assert.equal(english.documentElement.dir,'ltr');
 assert.equal(english.tr('جاهز'),'Ready');
-assert.equal(english.tr('{count} من 20',{count:3}),'3 of 20');
+assert.equal(english.tr('{count} من 10',{count:3}),'3 of 10');
 assert.equal(english.tr('Notepad'),'Notepad','App names and anything without an entry pass through');
 assert.equal(english.tr('constructor'),'constructor','The table is only ever asked about its own entries');
 assert.equal(english.tr(undefined),undefined);

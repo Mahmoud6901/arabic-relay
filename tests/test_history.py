@@ -25,17 +25,17 @@ class SentHistory(unittest.TestCase):
             if state:
                 db.execute('INSERT INTO deliveries VALUES (?,?,?,?)', (key, key, state, '{}'))
 
-    def test_imports_twenty_latest_accepted_actions_only_once(self):
+    def test_imports_ten_latest_accepted_actions_only_once(self):
         for i in range(25):
             self.snapshot(str(i), 'submitted' if i == 24 else 'sent', i)
         self.snapshot('failed', 'unknown', 100)
         self.snapshot('draft', None, 101)
         items = history.entries()['entries']
-        self.assertEqual([item['id'] for item in items], [str(i) for i in range(24, 4, -1)])
+        self.assertEqual([item['id'] for item in items], [str(i) for i in range(24, 14, -1)])
         self.assertEqual(set(items[0]), {'id', 'english', 'sentAt', 'destinations'})
         self.assertEqual(items[0]['destinations'], ['Coordinator'])
         history.delete('24')
-        self.assertEqual(len(history.entries()['entries']), 19)
+        self.assertEqual(len(history.entries()['entries']), 9)
         self.assertNotIn('24', [item['id'] for item in history.entries()['entries']])
         self.assertEqual(history.clear(), {'entries': []})
         self.assertEqual(history.entries(), {'entries': []})
@@ -74,7 +74,7 @@ class SentHistory(unittest.TestCase):
             self.assertEqual(history.entries(), {'entries': []})
         self.assertEqual(sum(call.args[0] == 't3_thread_send' for call in transport.call_args_list), 2)
 
-    def test_failed_send_is_not_saved_and_new_sends_prune_to_twenty(self):
+    def test_failed_send_is_not_saved_and_new_sends_prune_to_ten(self):
         body = self.body()
         body['targets'] = [body['targets'][1]]
         with patch.object(t3, 'tool', side_effect=self.transport):
@@ -83,9 +83,23 @@ class SentHistory(unittest.TestCase):
             for i in range(1, 23):
                 t3.send_prompt(self.body(i))
         items = history.entries()['entries']
-        self.assertEqual(len(items), 20)
+        self.assertEqual(len(items), 10)
         self.assertEqual(items[0]['english'], 'Prompt 22')
-        self.assertEqual(items[-1]['english'], 'Prompt 3')
+        self.assertEqual(items[-1]['english'], 'Prompt 13')
+
+    def test_existing_twenty_entry_install_is_pruned_on_first_read(self):
+        with patch.object(history, 'LIMIT', 20), store.database() as db:
+            history.initialize(db)
+            for i in range(20):
+                with patch.object(history.time, 'time', return_value=i):
+                    history.record(db, str(i), {'english': f'Prompt {i}', 'targets': []})
+            self.assertEqual(db.execute('SELECT count(*) FROM sent_history').fetchone()[0], 20)
+        self.assertEqual([item['id'] for item in history.entries()['entries']],
+                         [str(i) for i in range(19, 9, -1)])
+        with store.database() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM sent_history').fetchone()[0], 10)
+        history.delete('19')
+        self.assertEqual(len(history.entries()['entries']), 9)  # Older entries cannot reappear.
 
     def test_history_failure_does_not_hide_a_confirmed_send(self):
         with patch.object(t3, 'tool', side_effect=self.transport), \

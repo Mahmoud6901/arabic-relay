@@ -15,7 +15,7 @@ const RELAY_EN={
  "الإعدادات":"Settings",
  "أقسام البرنامج":"App sections",
  "اختصار التسجيل":"Recording shortcut",
- "آخر 20 نص. نص بس، محفوظ على جهازك.":"Your last 20 texts. Text only, saved on this computer.",
+ "آخر 10 نص. نص بس، محفوظ على جهازك.":"Your last 10 texts. Text only, saved on this computer.",
  "مسح السجل":"Clear history",
  "الكلام لنص":"Speech to text",
  "تطبيق على جهازك · بيحوّل الكلام أونلاين بحسابك":"App on this computer · converts speech online with your account",
@@ -116,7 +116,7 @@ const RELAY_EN={
  "{tool} اتنقل أو اتمسح: {path}. البرنامج هيستخدم أي نسخة يلاقيها، أو اختار مكانه من تبويب النماذج.":"{tool} was moved or deleted: {path}. The app will use any copy it finds, or you can locate it on the Models tab.",
  "راجع صفحة تسجيل الدخول، وحسّن رسائل الخطأ عشان تكون واضحة للمستخدم. ما تغيّرش طريقة تسجيل الدخول الحالية، واتأكد إن الصفحة بتشتغل كويس على الموبايل.":"Review the login page and make its error messages clear to the user. Do not change the current sign-in method, and make sure the page works well on mobile.",
  "ما قدرتش ألصق.":"Couldn't paste.",
- "{count} من 20":"{count} of 20",
+ "{count} من 10":"{count} of 10",
  "اقرا الكل":"Read all",
  "اقفل":"Show less",
  "نسخ":"Copy",
@@ -533,7 +533,7 @@ dialog p{margin-bottom:10px;color:var(--muted);font-size:14px}
  <header class="topbar"><div class="brand" dir="ltr">Arabic Relay</div><div class="tabs" id="tabs" role="tablist" aria-label="أقسام البرنامج"><button class="tab" role="tab" id="historyButton" aria-controls="historyPanel" aria-selected="true">السجل</button><button class="tab" role="tab" id="modelsButton" aria-controls="modelsPanel" aria-selected="false" tabindex="-1">النماذج</button><button class="tab" role="tab" id="settingsButton" aria-controls="settingsPanel" aria-selected="false" tabindex="-1">الإعدادات</button></div><div class="top-key" id="topKey" hidden><span>اختصار التسجيل</span><kbd class="keycap mono" id="topShortcut" dir="ltr">Ctrl + Alt + Space</kbd></div></header>
  <div class="panels">
  <section class="panel" id="historyPanel" role="tabpanel" aria-labelledby="historyButton"><div class="column">
-  <p class="panel-intro">آخر 20 نص. نص بس، محفوظ على جهازك.</p>
+  <p class="panel-intro">آخر 10 نص. نص بس، محفوظ على جهازك.</p>
   <p class="history-message" id="historyMessage" role="status" aria-live="polite"></p>
   <div class="history-list" id="historyList"></div>
   <footer class="history-footer"><span id="historySummary"></span><button class="text-btn" id="clearHistory" disabled>مسح السجل</button></footer>
@@ -768,7 +768,7 @@ let historyItems=[],historyLoaded=false,historyBusy=false,shortcutLabel='Ctrl + 
 const HISTORY_PREVIEW=140;
 function renderHistory(){
  $('clearHistory').hidden=!historyItems.length;$('clearHistory').disabled=historyBusy||!historyItems.length;
- $('historySummary').textContent=tr('{count} من 20',{count:historyItems.length});
+ $('historySummary').textContent=tr('{count} من 10',{count:historyItems.length});
  $('historyList').innerHTML=historyItems.length?historyItems.map(entry=>{
   const stamp=new Date(entry.sentAt*1000),place=entry.destinations.map(where=>esc(tr(where.replace(/ · paste requested$/,'')))).join(' · '),state=historyBusy?'disabled':'';
   const text=entry.english.length>HISTORY_PREVIEW?`<details class="history-details"><summary dir="auto"><span class="history-preview">${esc(entry.english.slice(0,HISTORY_PREVIEW))}…</span><span class="history-more">${tr('اقرا الكل')}</span><span class="history-less">${tr('اقفل')}</span></summary><div class="history-prompt" dir="auto">${esc(entry.english)}</div></details>`:`<div class="history-prompt" dir="auto">${esc(entry.english)}</div>`;

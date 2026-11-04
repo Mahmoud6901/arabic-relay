@@ -36,6 +36,7 @@ const run=code=>vm.runInContext(code,context);
 (async()=>{
  await flush();await nodes.get('historyButton').click();await flush();
  assert.equal(nodes.get('historyPanel').hidden,false);
+ assert.equal(nodes.get('historySummary').textContent,'1 من 10');
  assert.ok(!html.includes('id="historyDialog"'));
  assert.ok(nodes.get('historyList').innerHTML.includes('&lt;script&gt;'));
  assert.ok(!nodes.get('historyList').innerHTML.includes('<script>'));

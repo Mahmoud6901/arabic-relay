@@ -1,16 +1,20 @@
-"""The latest twenty accepted send actions. Local text and destination names only."""
+"""The latest ten accepted send actions. Local text and destination names only."""
 import json
 import time
 
 from . import store
 
-LIMIT = 20
+LIMIT = 10
 
 
 def _insert(db, request_id, payload, sent_at):
     names = [target['title'] for target in payload['targets'] if isinstance(target.get('title'), str)]
     db.execute('INSERT OR IGNORE INTO sent_history VALUES (?, ?, ?, ?)',
                (request_id, payload['english'], sent_at, json.dumps(names, ensure_ascii=False)))
+    _prune(db)
+
+
+def _prune(db):
     db.execute('DELETE FROM sent_history WHERE id NOT IN '
                '(SELECT id FROM sent_history ORDER BY sent_at DESC,id DESC LIMIT ?)', (LIMIT,))
 
@@ -18,6 +22,7 @@ def _insert(db, request_id, payload, sent_at):
 def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS sent_history '
                '(id TEXT PRIMARY KEY, english TEXT NOT NULL, sent_at REAL NOT NULL, destinations TEXT NOT NULL)')
+    _prune(db)  # Apply the current limit to existing installs before returning their history.
     if db.execute("SELECT 1 FROM settings WHERE key='sent_history_imported'").fetchone():
         return
     # Import once: deleted and pruned entries must never return from older delivery snapshots.
