@@ -17,7 +17,7 @@ os.environ['ARABIC_RELAY_NATIVE'] = '1'
 import webview
 
 from . import diagnostics, server, locate, paths, speech, store, t3, updates, paste, history, inline
-from .hotkey import RecordingHotkey
+from .hotkey import RecordingHotkey, CaptureHotkeys
 
 
 PILL = {'capture': (147, 40), 'message': (400, 60)}   # logical pixels; the page's pill fills the window exactly
@@ -102,6 +102,7 @@ class QuickCapture:
         self.capture_id = None
         self.paste_attempted = False
         self.hotkey = RecordingHotkey(self.toggle, choice)
+        self.capture_keys = None
 
     def toggle(self):
         if self.exiting or not self.lock.acquire(blocking=False):
@@ -146,7 +147,17 @@ class QuickCapture:
             if self.window and not self.exiting and not self.ready:
                 self.ready = True
                 self.place()    # WinForms' take-off for a frameless window depends on the display scale
+                window = self.window
+                self.capture_keys = CaptureHotkeys(lambda: self.finish(window), lambda: self.request_close(window))
+                self.capture_keys.start()
+                if not self.capture_keys.registered:
+                    logging.warning('Enter/Esc could not be reserved: %s', self.capture_keys.error)
                 self.window.evaluate_js('void window.relayQuickToggle()')
+
+    def finish(self, window):
+        with self.lock:
+            if self.window is window and self.ready and not self.exiting:
+                window.evaluate_js('void window.relayQuickFinish()')
 
     def place(self):
         """Exact size, centred above the bottom of the screen."""
@@ -170,10 +181,12 @@ class QuickCapture:
         threading.Thread(target=self.request_close, daemon=True).start()
         return False
 
-    def request_close(self):
+    def request_close(self, expected_window=None):
         if not self.lock.acquire(blocking=False):
             return
         try:
+            if expected_window is not None and self.window is not expected_window:
+                return
             if self.window and (not self.ready or self.window.evaluate_js('window.relayQuickClose()')):
                 self.allow_close = True
                 self.window.destroy()
@@ -181,6 +194,9 @@ class QuickCapture:
             self.lock.release()
 
     def closed(self):
+        if self.capture_keys:
+            self.capture_keys.stop()
+            self.capture_keys = None
         self.window = None
         self.ready = False
         self.target = self.next_target = None
@@ -189,6 +205,8 @@ class QuickCapture:
     def stop(self):
         self.exiting = True
         self.hotkey.stop()
+        if self.capture_keys:
+            self.capture_keys.stop()
         if self.window:
             self.window.destroy()
 
@@ -300,6 +318,9 @@ class DesktopApi:
             raise ValueError('Invalid request.')
         window = self._capture.window
         if window:
+            # Flow needs normal keyboard/IME input; the focused page handles Enter/Esc itself.
+            if self._capture.capture_keys:
+                self._capture.capture_keys.stop()
             take_keyboard(window)
 
     def quick_stage(self, stage, token):

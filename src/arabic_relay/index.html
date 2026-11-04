@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/icon.svg"><title>Arabic Relay</title>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/icon.png"><title>Arabic Relay</title>
 <script>
 try{document.documentElement.dataset.theme=localStorage.getItem('relay-theme')==='light'?'light':'dark';}catch{document.documentElement.dataset.theme='dark';}
 document.documentElement.dataset.quick=String(window.location?.search==='?quick=1');
@@ -9,6 +9,7 @@ document.documentElement.dataset.quick=String(window.location?.search==='?quick=
 // tests/test_language_ui.cjs fails if a string the app can show has no English.
 const RELAY_EN={
  "جاهز":"Ready",
+ "أثناء التسجيل: Enter لإنهاء التسجيل واللصق، وEsc للإلغاء.":"While recording: Enter to finish and paste, Esc to cancel.",
  "السجل":"History",
  "النماذج":"Models",
  "الإعدادات":"Settings",
@@ -566,7 +567,7 @@ dialog p{margin-bottom:10px;color:var(--muted);font-size:14px}
  <section class="panel" id="settingsPanel" role="tabpanel" aria-labelledby="settingsButton" hidden><div class="column">
   <section class="group" id="languageSettings"><h2>اللغة</h2><div class="mode-buttons" role="group" aria-label="لغة البرنامج"><button class="btn" id="languageArabic" lang="ar" aria-pressed="true">العربية</button><button class="btn" id="languageEnglish" lang="en" aria-pressed="false">English</button></div><p class="group-help">بتغيّر لغة البرنامج بس. البرومبت بيفضل بالإنجليزي.</p></section>
   <section class="group"><h2>طريقة الكتابة</h2><div class="mode-buttons" role="group" aria-label="طريقة الكتابة"><button class="btn" id="craftMode" aria-pressed="true">برومبت منظّم</button><button class="btn" id="inlineMode" aria-pressed="false">ترجمة العربي بس</button></div><p class="group-help" id="modeHelp"></p></section>
-  <section class="group" id="shortcutSettings" hidden><h2>الاختصار</h2><div class="setting"><label for="shortcutChoice">اختصار التسجيل</label><select id="shortcutChoice" dir="ltr"><option value="ctrl-alt-space">Ctrl + Alt + Space</option><option value="ctrl-alt-r">Ctrl + Alt + R</option><option value="ctrl-shift-space">Ctrl + Shift + Space</option></select></div><p class="group-help" id="shortcutHelp" role="status">سيب البرنامج مفتوح أو متصغّر. الاختصار بيبدأ التسجيل وبيوقفه.</p><p class="group-help" id="shortcutStatus" hidden></p></section>
+  <section class="group" id="shortcutSettings" hidden><h2>الاختصار</h2><div class="setting"><label for="shortcutChoice">اختصار التسجيل</label><select id="shortcutChoice" dir="ltr"><option value="ctrl-alt-space">Ctrl + Alt + Space</option><option value="ctrl-alt-r">Ctrl + Alt + R</option><option value="ctrl-shift-space">Ctrl + Shift + Space</option></select></div><p class="group-help" id="shortcutHelp" role="status">سيب البرنامج مفتوح أو متصغّر. الاختصار بيبدأ التسجيل وبيوقفه.</p><p class="group-help" id="shortcutStatus" hidden></p><p class="group-help">أثناء التسجيل: Enter لإنهاء التسجيل واللصق، وEsc للإلغاء.</p></section>
   <section class="group"><h2>الشكل</h2><button class="btn" id="themeToggle" aria-label="غيّر للوضع الفاتح"><svg aria-hidden="true" focusable="false"><use href="#i-sun"/></svg><span>الوضع الفاتح</span></button></section>
   <section class="group" id="aboutSettings"><h2>التحديثات</h2><p id="appVersion">Arabic Relay</p><div class="setting"><label for="updateMode">طريقة التحديث</label><select id="updateMode"><option value="auto">تلقائي</option><option value="notify">تنبيه بس</option><option value="off">إيقاف</option></select></div><label class="choice"><input id="installOnQuit" type="checkbox" checked>ثبّت التحديثات لما أقفل البرنامج</label></section>
   <details class="group" id="advancedSettings"><summary>متقدم</summary>
@@ -1365,6 +1366,20 @@ $('flowCapture').addEventListener('input',receiveFlowText);
 $('flowCapture').addEventListener('compositionstart',()=>{(inlineMode()?$('english'):$('arabic')).dispatchEvent(new Event('compositionstart'));});
 $('flowCapture').addEventListener('compositionend',()=>{receiveFlowText();(inlineMode()?$('english'):$('arabic')).dispatchEvent(new Event('compositionend'));});
 $('captureStop').addEventListener('click',()=>finishRecording());
+window.relayQuickFinish=()=>{
+ if(!quickCapture||busy||inlinePendingId||quickEnding||quickComposing||inlineComposing)return;
+ if(listening){finishRecording();return;}
+ if(dictationProvider==='wispr'&&$('flowCapture').value.trim())receiveFlowText({inputType:'insertFromPaste'});
+};
+function quickKeydown(event){
+ if(!quickCapture||event.isComposing||quickComposing||inlineComposing||event.ctrlKey||event.altKey||event.shiftKey||event.metaKey)return;
+ if(event.key!=='Enter'&&event.key!=='Escape')return;
+ event.preventDefault();
+ if(event.repeat)return;
+ if(event.key==='Enter')window.relayQuickFinish();
+ else window.pywebview?.api.close_quick?.(csrf);
+}
+document.addEventListener('keydown',quickKeydown);
 $('captureRetry').addEventListener('click',()=>{clearTimeout(quickCloseTimer);quickCloseTimer=null;quickEnding=false;quickFailure=false;quickMessage='';$('captureRetry').hidden=true;setPillStage('capture');transcribeRecording();});
 $('captureClose').addEventListener('click',()=>window.pywebview?.api.close_quick?.(csrf));
 let confirmation=null;

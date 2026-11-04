@@ -58,7 +58,7 @@ async function toggleCapture(){await context.window.relayQuickToggle();}
    const preloads=requests.filter(r=>r.url==='/api/speech/prepare').length;
    await toggleCapture();assert.equal(vm.runInContext('listening',context),true);
    assert.equal(requests.filter(r=>r.url==='/api/speech/prepare').length,preloads+(provider==='whisper'?1:0));
-   await toggleCapture();await flush();await flush();
+   context.window.relayQuickFinish();await flush();await flush();
    assert.equal(vm.runInContext('listening',context),false);
    assert.equal(requests.filter(r=>r.url==='/api/translate').length,translations+1);
    assert.equal(nodes.get('english').value,'The deadline is after the meeting. Keep React.');

@@ -75,8 +75,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path.path == '/':
                 return self.respond((ROOT / 'index.html').read_bytes(), content_type='text/html; charset=utf-8')
-            if path.path == '/icon.svg':
-                return self.respond((ROOT / 'assets/icon.svg').read_bytes(), content_type='image/svg+xml')
+            if path.path == '/icon.png':
+                return self.respond((ROOT / 'assets/icon.png').read_bytes(), content_type='image/png')
             if path.path == '/pcm-capture.js':
                 return self.respond((ROOT / 'assets/pcm-capture.js').read_bytes(), content_type='text/javascript; charset=utf-8')
             if path.path == '/fonts/InterVariable.woff2':
