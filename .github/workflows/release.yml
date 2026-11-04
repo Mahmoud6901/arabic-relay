@@ -46,6 +46,7 @@ jobs:
           node tests/test_confirmation_ui.cjs
           node tests/test_incremental_ui.cjs
           node tests/test_incremental_ui.cjs --quick
+          node tests/test_incremental_ui.cjs --quick --inline
           node tests/test_vocabulary_ui.cjs
           node tests/test_voice.cjs --quick
       - name: Inno Setup
