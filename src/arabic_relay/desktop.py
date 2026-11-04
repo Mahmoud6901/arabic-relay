@@ -122,7 +122,7 @@ class QuickCapture:
                 self.stage = 'capture'
                 width, height = PILL['capture']
                 self.window = webview.create_window(
-                    'Arabic Relay — تسجيل', server.ORIGIN + '/?quick=1',
+                    'Arabic Relay', server.ORIGIN + '/?quick=1',
                     js_api=DesktopApi(self, quick=True), width=width + FRAME, height=height + FRAME,
                     x=int(screen.x / scale) + (screen_width - width) // 2,
                     y=int(screen.y / scale) + screen_height - height - 70,

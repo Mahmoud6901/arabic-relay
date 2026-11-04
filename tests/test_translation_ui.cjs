@@ -12,17 +12,25 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null,localTranslator=null}={}){
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null,localTranslator=null,language=null,reopenTab=null}={}){
  const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
  if(provider)storage.set('relay-dictation-provider',provider);
+ if(language)storage.set('relay-language',language);
+ if(reopenTab)storage.set('relay-reopen-tab',reopenTab);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
- for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
+ for(const match of html.matchAll(/id="([^"]+)"/g)){
+  const node=element(),attributes=new Map();
+  node.setAttribute=(name,value)=>attributes.set(name,String(value));
+  node.getAttribute=name=>attributes.get(name)??null;
+  node.removeAttribute=name=>attributes.delete(name);
+  nodes.set(match[1],node);
+ }
  for(const match of html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*>/g))if(/\shidden[\s>]/.test(match[0]))nodes.get(match[1]).hidden=true;
  let choice={tool:'codex',model:'gpt-6.1-sol',effort:'low'};
  const context=vm.createContext({console,Blob,Map,Set,JSON,crypto:require('node:crypto').webcrypto,Event:class{constructor(type){this.type=type;}},encodeURIComponent,decodeURIComponent,queueMicrotask,setTimeout,clearTimeout,
   MediaRecorder:class{static isTypeSupported(){return true;}},
   document:{getElementById:id=>nodes.get(id)||null,createElement:element,documentElement:{dataset:{}},addEventListener(){}},
-  localStorage:{getItem(key){return storage.get(key)||'';},setItem(key,value){storage.set(key,value);}},
+  localStorage:{getItem(key){return storage.get(key)||'';},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},
   navigator:{mediaDevices:{}},confirm:()=>true,
   fetch:async(url,options)=>{const body=options?.body?JSON.parse(options.body):undefined;requests.push({url,body});let data,ok=true;
    if(url==='/api/status')data={csrf:'t',connected:false,selfLearning:true,autoSpelling:false,speechConfigured:true,setupNeeded:false,
@@ -42,7 +50,7 @@ function boot({status={},translators=catalog(),choiceError=null,translate=null,i
    return {ok,json:async()=>data};}});
  context.window={location:{search:quick?'?quick=1':''},MediaRecorder:context.MediaRecorder,addEventListener(){},pywebview:{api:{pick_file:async()=>'C:\\Tools\\other\\codex.exe',pick_folder:async()=>null,quick_ready:async()=>{},begin_capture:async()=>({captureId:'capture-test',available:false}),paste_to_target:async(body)=>{requests.push({url:'native:paste',body});return {status:'paste_requested',message:'Paste requested'};},finish_paste:async()=>{},shortcut_status:async()=>({available:true})}}};
  for(const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script[1],context);
- return {nodes,requests,context,posted:url=>requests.filter(r=>r.url===url),choice:()=>choice};
+ return {nodes,requests,context,storage,posted:url=>requests.filter(r=>r.url===url),choice:()=>choice};
 }
 async function openSettings(app){await app.nodes.get('modelsButton').click();await flush();}
 const choose=(app,dataset)=>app.nodes.get('modelSettings').listeners.click({target:{closest:()=>({disabled:false,dataset})}});
