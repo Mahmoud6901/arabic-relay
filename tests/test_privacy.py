@@ -14,7 +14,7 @@ FORBIDDEN_TEXT = [re.compile(p) for p in (
     r'sk-[A-Za-z0-9_-]{20,}',                         # API keys
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----',
 )]
-BINARY = {'.ttf', '.ico', '.png', '.jpg', '.wav'}
+BINARY = {'.ttf', '.woff2', '.ico', '.png', '.jpg', '.wav'}
 
 
 def offenders(root):

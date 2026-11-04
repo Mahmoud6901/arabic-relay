@@ -79,7 +79,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond((ROOT / 'assets/icon.svg').read_bytes(), content_type='image/svg+xml')
             if path.path == '/pcm-capture.js':
                 return self.respond((ROOT / 'assets/pcm-capture.js').read_bytes(), content_type='text/javascript; charset=utf-8')
-            if path.path in ('/fonts/Geist.ttf', '/fonts/InstrumentSerif-Italic.ttf', '/fonts/InstrumentSerif-Regular.ttf', '/fonts/DMMono-Regular.ttf', '/fonts/NotoSansArabic.ttf'):
+            if path.path == '/fonts/InterVariable.woff2':
+                return self.respond((ROOT / path.path.lstrip('/')).read_bytes(), content_type='font/woff2')
+            if path.path in ('/fonts/JetBrainsMono.ttf', '/fonts/NotoSansArabic.ttf'):
                 return self.respond((ROOT / path.path.lstrip('/')).read_bytes(), content_type='font/ttf')
             if path.path == '/api/status':
                 auth = None

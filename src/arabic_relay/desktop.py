@@ -60,7 +60,7 @@ class QuickCapture:
                     x=int(screen.x / scale) + (screen_width - width) // 2,
                     y=int(screen.y / scale) + screen_height - height - 70,
                     min_size=(280, 80), frameless=True, easy_drag=False,
-                    on_top=True, background_color='#000000', text_select=True)
+                    on_top=True, background_color='#08090a', text_select=True)
                 self.window.events.closing += self.closing
                 self.window.events.closed += self.closed
             elif self.ready:
@@ -238,7 +238,7 @@ def run():
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         window = webview.create_window('Arabic Relay', server.ORIGIN, js_api=DesktopApi(capture),
                              width=1380, height=940, min_size=(760, 650),
-                             background_color='#000000', text_select=True)
+                             background_color='#08090a', text_select=True)
         window.events.closed += capture.stop
         window.events.loaded += speech.prewarm   # only when the user asked for it; never blocks the window
         webview.start(capture.hotkey.start, gui='edgechromium', private_mode=False,
