@@ -330,7 +330,7 @@ const RELAY_EN_PATTERNS=[
  [new RegExp("^(.+) مش متثبّت\\. اختار (.+) من تبويب النماذج\\.$"),"$1 isn't installed. Choose $2 on the Models tab."],
  [new RegExp("^(.+) بيجهز نص دلوقتي\\. استنى لما يخلص\\.$"),"$1 is preparing text. Wait for it to finish."]
 ];
-const relayLanguage=(()=>{try{return localStorage.getItem('relay-language')==='en'?'en':'ar';}catch{return 'ar';}})();
+const relayLanguage=(()=>{try{return localStorage.getItem('relay-language')==='ar'?'ar':'en';}catch{return 'en';}})();
 const relayLocale=relayLanguage==='en'?'en':'ar-EG-u-nu-latn',ALIAS_ARROW=relayLanguage==='en'?'→':'←';
 if(relayLanguage==='en'){document.documentElement.lang='en';document.documentElement.dir='ltr';}
 function relayEnglish(text){

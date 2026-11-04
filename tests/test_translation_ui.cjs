@@ -12,7 +12,7 @@ function catalog({codex={},claude={}}={}){return {codex:{installed:true,path:'C:
  claude:{installed:true,path:'C:\\Tools\\claude.exe',signedIn:null,models:CLAUDE,...claude},efforts:EFFORTS};}
 const label=c=>`${c.tool==='codex'?'Codex':'Claude Code'} · ${c.model||'Default'} · ${c.effort}`;
 
-function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null,localTranslator=null,language=null,reopenTab=null}={}){
+function boot({status={},translators=catalog(),choiceError=null,translate=null,inlineHandler=null,storedMode=null,quick=false,provider=null,catalogHandler=null,localTranslator=null,language='ar',reopenTab=null}={}){
  const nodes=new Map(),requests=[],storage=new Map();if(storedMode)storage.set('relay-writing-mode',storedMode);
  if(provider)storage.set('relay-dictation-provider',provider);
  if(language)storage.set('relay-language',language);

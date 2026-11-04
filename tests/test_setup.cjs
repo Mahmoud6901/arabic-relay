@@ -8,7 +8,7 @@ const flush=async(times=8)=>{for(let i=0;i<times;i++)await new Promise(resolve=>
 const ABSENT={installed:false,active:false,path:null};
 
 function boot({status={},setup={},progress=[{state:'idle'}],pollMs=0}={}){
- const nodes=new Map(),requests=[],storage=new Map();
+ const nodes=new Map(),requests=[],storage=new Map([['relay-language','ar']]);
  function element(){return {value:'',disabled:false,hidden:false,checked:false,textContent:'',innerHTML:'',attributes:{},style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){},add(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},dispatchEvent(event){return this.listeners[event.type]?.(event);},setAttribute(name,value){this.attributes[name]=value;},getAttribute(name){return this.attributes[name]??null;},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
  for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
  for(const match of html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*>/g))if(/\shidden[\s>]/.test(match[0]))nodes.get(match[1]).hidden=true;

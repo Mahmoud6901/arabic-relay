@@ -5,7 +5,7 @@ const html=fs.readFileSync(path.join(__dirname,'..','src','arabic_relay','index.
 const nodes=new Map();
 function element(){return {value:'',disabled:false,textContent:'',innerHTML:'',attributes:{},style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){}},listeners:{},addEventListener(n,f){this.listeners[n]=f;},setAttribute(n,v){this.attributes[n]=v;},getAttribute(n){return this.attributes[n]??null;},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
 for(const m of html.matchAll(/id="([^"]+)"/g))nodes.set(m[1],element());
-const requests=[],storage=new Map();let copied='',historyFailure=false;
+const requests=[],storage=new Map([['relay-language','ar']]);let copied='',historyFailure=false;
 let entries=[{id:'saved',english:'Keep <script>alert("test")</script> as text.\nSecond line.',sentAt:1700000000,destinations:['Project / <session>']}];
 class Recorder{static isTypeSupported(){return true;}start(){this.state='recording';}stop(){this.state='inactive';this.ondataavailable({data:new Blob(['test'])});queueMicrotask(()=>this.onstop());}}
 const context=vm.createContext({console,crypto:require('node:crypto'),Blob,Map,Set,JSON,encodeURIComponent,queueMicrotask,setTimeout,clearTimeout,MediaRecorder:Recorder,

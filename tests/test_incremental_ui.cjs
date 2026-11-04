@@ -8,7 +8,7 @@ const quickMode=process.argv.includes('--quick');
 const nodes=new Map();
 function element(){return {value:'',disabled:false,hidden:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
 for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
-const requests=[],storage=new Map(),contexts=[],workletNodes=[],pastes=[],stages=[];
+const requests=[],storage=new Map([['relay-language','ar']]),contexts=[],workletNodes=[],pastes=[],stages=[];
 const inlineQuick=quickMode&&process.argv.includes('--inline');
 if(inlineQuick)storage.set('relay-writing-mode','inline');
 let micStarts=0,stops=0,incremental=true,chunkFailure=false,finishFailure=false,finishGate=null;

@@ -13,7 +13,7 @@ function boot({status={},replies={}}={}){
  const context=vm.createContext({console,Blob,Map,Set,JSON,Event:class{constructor(type){this.type=type;}},encodeURIComponent,decodeURIComponent,queueMicrotask,setTimeout,clearTimeout,
   MediaRecorder:class{static isTypeSupported(){return true;}},
   document:{getElementById:id=>nodes.get(id)||null,createElement:element,documentElement:{dataset:{}},addEventListener(){}},
-  localStorage:{getItem(){return '';},setItem(){}},
+  localStorage:{getItem(key){return key==='relay-language'?'ar':'';},setItem(){}},
   navigator:{mediaDevices:{},clipboard:{writeText:async text=>{clipboard.push(text);}}},confirm:()=>true,
   fetch:async(url,options)=>{const body=options?.body?JSON.parse(options.body):undefined;requests.push({url,body});let data,ok=true;
    if(url==='/api/status')data={csrf:'t',connected:false,selfLearning:true,autoSpelling:false,speechConfigured:true,setupNeeded:false,

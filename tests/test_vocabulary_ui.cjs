@@ -7,7 +7,7 @@ const html=fs.readFileSync(require('node:path').join(__dirname,'..','src','arabi
 const nodes=new Map();
 function element(){return {value:'',disabled:false,hidden:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
 for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
-const requests=[],storage=new Map();
+const requests=[],storage=new Map([['relay-language','ar']]);
 let rules=[{id:1,heard:'ريدزاين',canonical:'redesign',enabled:1,provenance:'user'},];
 let proposals=[{heard:'لوجين فلو',spelling:'login flow'}];
 let translateGate=null,releaseTranslate=null;

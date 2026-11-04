@@ -10,20 +10,24 @@ const ARABIC=/[؀-ۿ]/;
 // Examples of Arabic that stay Arabic on purpose: the language's own name, a sample of a heard Arabic word.
 const STAYS_ARABIC=new Set(['العربية','ريدزاين']);
 
-function language(stored){
- const documentElement={dataset:{}},context=vm.createContext({console,document:{documentElement},window:{location:{search:''}},localStorage:{getItem:key=>key==='relay-language'?stored:null},Object,RegExp,String});
+function language(stored,storageUnavailable=false){
+ const documentElement={dataset:{}},context=vm.createContext({console,document:{documentElement},window:{location:{search:''}},localStorage:{getItem:key=>{if(storageUnavailable)throw new Error('Storage unavailable');return key==='relay-language'?stored:null;}},Object,RegExp,String});
  for(const [,script] of html.slice(0,html.indexOf('<style>')).matchAll(/<script>([\s\S]*?)<\/script>/g))vm.runInContext(script,context);
  return {context,documentElement,tr:(text,values)=>{context.__text=text;context.__values=values;return vm.runInContext('tr(__text,__values)',context);}};
 }
-const english=language('en'),arabic=language(null);
+const english=language('en'),arabic=language('ar');
 const missing=[];
 function expectEnglish(where,text){const shown=english.tr(text);if(ARABIC.test(shown))missing.push(`${where}: ${text}`);}
 
-// 1. Arabic stays exactly as written, and it is the default.
+// 1. A saved Arabic choice stays exactly as written; otherwise English is the default.
 assert.equal(arabic.documentElement.lang,undefined);assert.equal(arabic.documentElement.dir,undefined);
 assert.equal(arabic.tr('جاهز'),'جاهز');
 assert.equal(arabic.tr('{count} من 20',{count:3}),'3 من 20');
-assert.equal(language('fr').documentElement.dir,undefined,'Only a stored "en" changes the language');
+for(const stored of [null,'','fr']){
+ assert.equal(language(stored).documentElement.lang,'en');
+ assert.equal(language(stored).documentElement.dir,'ltr');
+}
+assert.equal(language(null,true).documentElement.lang,'en','Unavailable storage also defaults to English');
 
 // 2. English sets the direction before the first paint and fills in values.
 assert.equal(english.documentElement.lang,'en');assert.equal(english.documentElement.dir,'ltr');
@@ -82,7 +86,8 @@ vm.runInContext('localizeNode(__tree)',arabic.context);assert.equal(arabicNode.n
 
 // 7. The real interface script in English, and the control in Settings.
 (async()=>{
- let app=boot({language:'en',status:{nativeDesktop:true}});await flush();let n=app.nodes;
+ let app=boot({language:null,status:{nativeDesktop:true}});await flush();let n=app.nodes;
+ assert.equal(app.storage.has('relay-language'),false,'This is a first launch without a saved language');
  assert.equal(app.context.document.documentElement.dir,'ltr');
  assert.equal(n.get('languageEnglish').getAttribute('aria-pressed'),'true');assert.equal(n.get('languageArabic').getAttribute('aria-pressed'),'false');
  assert.ok(!ARABIC.test(n.get('privacySummary').textContent),n.get('privacySummary').textContent);
@@ -105,8 +110,8 @@ vm.runInContext('localizeNode(__tree)',arabic.context);assert.equal(arabicNode.n
  n.get('languageArabic').listeners.click();assert.equal(reloads,1);
  assert.equal(app.storage.get('relay-language'),'ar');assert.equal(app.storage.get('relay-reopen-tab'),'settings');
 
- // Arabic is the default: the same screen stays right to left, and its text is untouched.
- app=boot({status:{nativeDesktop:true}});await flush();n=app.nodes;
+ // A saved Arabic preference keeps the screen right to left and its text untouched.
+ app=boot({language:'ar',status:{nativeDesktop:true}});await flush();n=app.nodes;
  assert.equal(app.context.document.documentElement.dir,undefined);
  assert.equal(n.get('languageArabic').getAttribute('aria-pressed'),'true');
  vm.runInContext("notice('فيه تحميل شغال بالفعل.')",app.context);assert.equal(n.get('notice').textContent,'فيه تحميل شغال بالفعل.');
@@ -121,7 +126,7 @@ vm.runInContext('localizeNode(__tree)',arabic.context);assert.equal(arabicNode.n
  assert.equal(n.get('settingsButton').getAttribute('aria-selected'),'true');assert.equal(app.storage.get('relay-reopen-tab'),undefined);
 
  // A newly opened pill uses the same saved language and translates dynamic failures.
- app=boot({language:'en',quick:true,reopenTab:'settings',status:{nativeDesktop:true}});await flush();n=app.nodes;
+ app=boot({language:null,quick:true,reopenTab:'settings',status:{nativeDesktop:true}});await flush();n=app.nodes;
  assert.equal(app.context.document.documentElement.dir,'ltr');
  assert.equal(app.storage.get('relay-reopen-tab'),'settings','The pill must not consume the main window tab preference');
  vm.runInContext("notice('محرك الكلام وقف. سجّل تاني عشان يشتغل.')",app.context);
@@ -133,5 +138,5 @@ vm.runInContext('localizeNode(__tree)',arabic.context);assert.equal(arabicNode.n
  assert.equal(n.get('english').value,'Keep these words.');
  assert.equal(n.get('notice').textContent,'Preparing cancelled. The English draft is ready to review.');
 
- console.log('Language: Arabic default, every string has English, direction, dates, keys, and the Settings control verified.');
+ console.log('Language: English default, saved Arabic preference, every string, direction, dates, keys, and the Settings control verified.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

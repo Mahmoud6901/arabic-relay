@@ -6,7 +6,7 @@ const html=fs.readFileSync(require('node:path').join(__dirname,'..','src','arabi
 const nodes=new Map();
 function element(){return {value:'',disabled:false,textContent:'',innerHTML:'',style:{setProperty(){}},dataset:{},classList:{toggle(){},remove(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(){},removeAttribute(){},querySelector(){return element();},append(){},after(){},remove(){},focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},click(){return this.listeners.click?.();}};}
 for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],element());
-const requests=[],storage=new Map(); let fail=false, restoreFailure=false, stops=0,micStarts=0,learningEnabled=true,learningFailure=false;
+const requests=[],storage=new Map([['relay-language','ar']]); let fail=false, restoreFailure=false, stops=0,micStarts=0,learningEnabled=true,learningFailure=false;
 let transcribeNotice=null,autoSpelling=false,correctionGate=null,releaseCorrection=null,autoRestoreText=null;
 class Recorder{
  static isTypeSupported(t){return t==='audio/webm;codecs=opus';}
